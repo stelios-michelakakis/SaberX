@@ -25,7 +25,7 @@ export function PasswordChangeForm({ forced }: { forced: boolean }) {
       setError(fieldErrors || payload.error || "Password change failed");
       return;
     }
-    router.push("/workspace");
+    router.push("/dashboard");
   }
 
   return (

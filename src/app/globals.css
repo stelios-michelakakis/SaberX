@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@500;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif&display=swap");
 
 :root {
   --ink: #172033;
@@ -697,4 +698,257 @@ code {
   .statusbar {
     font-size: 11px;
   }
+}
+
+/* ============================================================================
+   SaberX dashboard design system — scoped to .sx-shell so it doesn't collide
+   with the legacy workspace styles above. Tokens come from the design bundle.
+   ============================================================================ */
+
+.sx-shell {
+  --bg: #fbfbfa;
+  --bg-2: #f4f4f2;
+  --bg-3: #ededeb;
+  --panel: #ffffff;
+  --panel-2: #fafaf9;
+  --line: #e8e8e5;
+  --line-2: #dedcd7;
+  --line-strong: #c8c5bd;
+  --ink: #1a1a17;
+  --ink-2: #3a3a35;
+  --ink-3: #6b6b62;
+  --ink-4: #9a9a8f;
+  --ink-5: #bfbfb4;
+  --sx-accent: oklch(0.55 0.16 255);
+  --accent-soft: oklch(0.96 0.02 255);
+  --accent-ink: oklch(0.42 0.18 255);
+  --green: oklch(0.62 0.14 155);
+  --green-soft: oklch(0.95 0.04 155);
+  --sx-amber: oklch(0.72 0.14 75);
+  --sx-amber-soft: oklch(0.96 0.05 80);
+  --red: oklch(0.6 0.18 25);
+  --red-soft: oklch(0.96 0.04 25);
+  --violet: oklch(0.58 0.15 295);
+  --violet-soft: oklch(0.96 0.03 295);
+
+  --row-h: 36px;
+  --sx-radius: 6px;
+  --sx-radius-lg: 10px;
+  --sx-shadow-sm: 0 1px 2px rgba(20, 20, 16, 0.04);
+  --sx-shadow-md: 0 2px 8px rgba(20, 20, 16, 0.06), 0 1px 2px rgba(20, 20, 16, 0.04);
+  --sx-shadow-lg: 0 12px 40px rgba(20, 20, 16, 0.12), 0 2px 8px rgba(20, 20, 16, 0.06);
+
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Instrument Serif", "Inter", serif;
+
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
+}
+
+.sx-shell[data-theme="dark"] {
+  --bg: #0e0e0d;
+  --bg-2: #161614;
+  --bg-3: #1d1d1a;
+  --panel: #141413;
+  --panel-2: #1a1a18;
+  --line: #262624;
+  --line-2: #2f2f2c;
+  --line-strong: #3d3d39;
+  --ink: #f2f1ec;
+  --ink-2: #d8d7d1;
+  --ink-3: #97968d;
+  --ink-4: #6b6b62;
+  --ink-5: #4a4a44;
+  --sx-accent: oklch(0.7 0.14 255);
+  --accent-soft: oklch(0.28 0.07 255);
+  --accent-ink: oklch(0.78 0.13 255);
+  --green: oklch(0.72 0.14 155);
+  --green-soft: oklch(0.26 0.06 155);
+  --sx-amber: oklch(0.78 0.13 75);
+  --sx-amber-soft: oklch(0.27 0.06 75);
+  --red: oklch(0.72 0.16 25);
+  --red-soft: oklch(0.26 0.06 25);
+  --violet: oklch(0.72 0.14 295);
+  --violet-soft: oklch(0.26 0.05 295);
+  --sx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sx-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sx-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.sx-shell[data-density="compact"] {
+  --row-h: 30px;
+  font-size: 12.5px;
+}
+
+.sx-shell[data-density="comfortable"] {
+  --row-h: 42px;
+  font-size: 13.5px;
+}
+
+.sx-shell *,
+.sx-shell *::before,
+.sx-shell *::after {
+  box-sizing: border-box;
+}
+
+.sx-shell button {
+  font-family: inherit;
+}
+
+.sx-shell ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.sx-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sx-shell ::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+  background-clip: padding-box;
+}
+.sx-shell ::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+  border: 2px solid var(--bg);
+  background-clip: padding-box;
+}
+
+.sx-shell .mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "ss02";
+  letter-spacing: -0.01em;
+}
+
+.sx-shell .kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+
+.sx-shell .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.sx-shell .pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sx-shell .pill-accent {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.sx-shell .pill-green {
+  background: var(--green-soft);
+  color: var(--green);
+  border-color: transparent;
+}
+.sx-shell .pill-amber {
+  background: var(--sx-amber-soft);
+  color: var(--sx-amber);
+  border-color: transparent;
+}
+.sx-shell .pill-red {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: transparent;
+}
+.sx-shell .pill-violet {
+  background: var(--violet-soft);
+  color: var(--violet);
+  border-color: transparent;
+}
+
+.sx-shell .sx-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--sx-radius);
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  font-family: inherit;
+  text-decoration: none;
+  min-height: 0;
+  box-shadow: none;
+  line-height: 1;
+}
+.sx-shell .sx-btn:hover {
+  background: var(--bg-2);
+  border-color: var(--line-strong);
+}
+.sx-shell .sx-btn-primary {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+.sx-shell .sx-btn-primary:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+.sx-shell .sx-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.sx-shell .sx-btn-ghost:hover {
+  background: var(--bg-2);
+}
+.sx-shell .sx-btn-sm {
+  height: 24px;
+  padding: 0 7px;
+  font-size: 11.5px;
+  gap: 4px;
+}
+.sx-shell .sx-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sx-shell .ic {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sx-shell .ic-sm {
+  width: 12px;
+  height: 12px;
+}
+.sx-shell .ic-lg {
+  width: 16px;
+  height: 16px;
 }

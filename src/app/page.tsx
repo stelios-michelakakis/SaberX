@@ -5,6 +5,6 @@ import { LoginForm } from "@/components/login-form";
 export default async function LoginPage() {
   const session = await getSessionUser();
   if (session?.mustChangePassword) redirect("/force-password");
-  if (session) redirect("/workspace");
+  if (session) redirect("/dashboard");
   return <LoginForm />;
 }

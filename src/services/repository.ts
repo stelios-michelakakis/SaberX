@@ -209,6 +209,30 @@ export async function listDocuments() {
   return db.select().from(documents).where(isNull(documents.deletedAt)).orderBy(desc(documents.updatedAt));
 }
 
+export async function restoreDocument(user: ActorUser, id: string) {
+  const [before] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+  if (!before) throw new Error("Document not found");
+  if (!before.deletedAt) throw new Error("Document is not deleted");
+  const [after] = await db
+    .update(documents)
+    .set({ deletedAt: null, updatedBy: user.userId, updatedAt: new Date() })
+    .where(eq(documents.id, id))
+    .returning();
+  await writeAudit({
+    actor: actor(user),
+    actionType: "DOCUMENT_UPDATE",
+    entityType: "document",
+    entityId: id,
+    parentDocumentId: id,
+    parentDocumentName: before.title,
+    before,
+    after,
+    summary: `Restored document ${before.title}`
+  });
+  await refreshSearchIndex(id);
+  return after;
+}
+
 export async function getWorkspaceData() {
   const docs = await db.select().from(documents).where(isNull(documents.deletedAt)).orderBy(desc(documents.updatedAt));
   const documentIds = docs.map((document) => document.id);
@@ -410,14 +434,179 @@ export async function createField(user: ActorUser, sheetId: string, input: { lab
   });
 }
 
+export async function updateField(
+  user: ActorUser,
+  fieldId: string,
+  input: Partial<{
+    label: string;
+    description: string;
+    required: boolean;
+    unique: boolean;
+    editable: boolean;
+    options: string[];
+    validation: Record<string, unknown>;
+    archived: boolean;
+  }>
+) {
+  const txId = randomUUID();
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select().from(fields).where(eq(fields.id, fieldId)).limit(1);
+    if (!before) throw new Error("Field not found");
+    if (before.isIdField) throw new Error("ID field cannot be edited");
+    const [sheet] = await tx.select().from(sheets).where(eq(sheets.id, before.sheetId)).limit(1);
+    if (!sheet) throw new Error("Sheet not found");
+    if (sheet.sheetKind === "glossary") throw new Error("GLOSSARY schema is system controlled");
+    const [after] = await tx
+      .update(fields)
+      .set({
+        label: input.label ?? before.label,
+        slug: input.label ? slugify(input.label) : before.slug,
+        description: input.description ?? before.description,
+        required: input.required ?? before.required,
+        unique: input.unique ?? before.unique,
+        editable: input.editable ?? before.editable,
+        validationJson: input.validation ?? before.validationJson,
+        archived: input.archived ?? before.archived,
+        updatedBy: user.userId,
+        updatedAt: new Date()
+      })
+      .where(eq(fields.id, fieldId))
+      .returning();
+    if (input.options) {
+      await tx.delete(fieldOptions).where(eq(fieldOptions.fieldId, fieldId));
+      if (input.options.length) {
+        await tx.insert(fieldOptions).values(
+          input.options.map((option, index) => ({
+            fieldId,
+            label: option,
+            value: option,
+            displayOrder: index + 1
+          }))
+        );
+      }
+    }
+    await writeAudit(
+      {
+        transactionId: txId,
+        actor: actor(user),
+        actionType: input.archived === true ? "FIELD_DELETE" : "FIELD_UPDATE",
+        entityType: "field",
+        entityId: fieldId,
+        parentDocumentId: sheet.documentId,
+        parentSheetId: sheet.id,
+        parentSheetName: sheet.name,
+        fieldId,
+        fieldLabel: after.label,
+        before,
+        after,
+        summary:
+          input.archived === true
+            ? `Archived field ${before.label}`
+            : `Updated field ${after.label}`
+      },
+      tx
+    );
+    await refreshGlossary(sheet.documentId, user, tx, txId);
+    await refreshSearchIndex(sheet.documentId, tx);
+    return after;
+  });
+}
+
+export async function reorderFields(user: ActorUser, sheetId: string, orderedFieldIds: string[]) {
+  const txId = randomUUID();
+  return db.transaction(async (tx) => {
+    const [sheet] = await tx.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
+    if (!sheet) throw new Error("Sheet not found");
+    if (sheet.sheetKind === "glossary") throw new Error("GLOSSARY field order is system controlled");
+    for (let i = 0; i < orderedFieldIds.length; i++) {
+      await tx
+        .update(fields)
+        .set({ displayOrder: i + 1, updatedBy: user.userId, updatedAt: new Date() })
+        .where(and(eq(fields.id, orderedFieldIds[i]), eq(fields.sheetId, sheetId)));
+    }
+    await writeAudit(
+      {
+        transactionId: txId,
+        actor: actor(user),
+        actionType: "FIELD_UPDATE",
+        entityType: "field_order",
+        entityId: sheetId,
+        parentDocumentId: sheet.documentId,
+        parentSheetId: sheet.id,
+        parentSheetName: sheet.name,
+        after: { order: orderedFieldIds },
+        summary: `Reordered fields on ${sheet.name}`
+      },
+      tx
+    );
+    return { sheetId, order: orderedFieldIds };
+  });
+}
+
+export async function ensureInstructionsReady(user: ActorUser, sheetId: string) {
+  const [sheet] = await db.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
+  if (!sheet || sheet.sheetKind !== "instructions") return null;
+  const existing = await db
+    .select()
+    .from(fields)
+    .where(and(eq(fields.sheetId, sheetId), eq(fields.archived, false)));
+  let bodyField = existing.find((f) => f.slug === "body");
+  if (!bodyField) {
+    const [created] = await db
+      .insert(fields)
+      .values({
+        sheetId,
+        label: "Body",
+        slug: "body",
+        type: "long_text",
+        description: "Document-specific instructions, guidance, or context.",
+        required: false,
+        editable: true,
+        displayOrder: 1,
+        createdBy: user.userId,
+        updatedBy: user.userId
+      })
+      .returning();
+    bodyField = created;
+  }
+  const existingRows = await db
+    .select()
+    .from(rows)
+    .where(and(eq(rows.sheetId, sheetId), isNull(rows.deletedAt)));
+  if (existingRows.length === 0) {
+    await db
+      .insert(rows)
+      .values({
+        sheetId,
+        canonicalOrder: 1,
+        createdBy: user.userId,
+        updatedBy: user.userId
+      })
+      .returning();
+  }
+  return bodyField;
+}
+
 export async function getSheetGrid(sheetId: string) {
   const [sheet] = await db.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
   if (!sheet || sheet.deletedAt) throw new Error("Sheet not found");
   const fieldRows = await db.select().from(fields).where(and(eq(fields.sheetId, sheetId), eq(fields.archived, false))).orderBy(asc(fields.displayOrder));
+  const fieldIds = fieldRows.map((f) => f.id);
+  const optionRows = fieldIds.length
+    ? await db
+        .select()
+        .from(fieldOptions)
+        .where(and(inArray(fieldOptions.fieldId, fieldIds), eq(fieldOptions.archived, false)))
+        .orderBy(asc(fieldOptions.displayOrder))
+    : [];
+  const fieldsWithOptions = fieldRows.map((f) => ({
+    ...f,
+    options: optionRows.filter((o) => o.fieldId === f.id).map((o) => ({ label: o.label, value: o.value }))
+  }));
 
   if (sheet.sheetKind === "glossary") {
     const entries = await db.select().from(glossaryEntries).where(eq(glossaryEntries.documentId, sheet.documentId)).orderBy(asc(glossaryEntries.block), asc(glossaryEntries.fieldOrCode));
-    return { sheet, fields: fieldRows, rows: entries.map((entry) => ({ id: entry.id, visibleId: "", canonicalOrder: 0, cells: { block: entry.block, field_or_code: entry.fieldOrCode, value_or_meaning: entry.valueOrMeaning } })) };
+    return { sheet, fields: fieldsWithOptions, rows: entries.map((entry) => ({ id: entry.id, visibleId: "", canonicalOrder: 0, cells: { block: entry.block, field_or_code: entry.fieldOrCode, value_or_meaning: entry.valueOrMeaning } })) };
   }
 
   const rowRows = await db.select().from(rows).where(and(eq(rows.sheetId, sheetId), isNull(rows.deletedAt))).orderBy(asc(rows.canonicalOrder));
@@ -442,7 +631,7 @@ export async function getSheetGrid(sheetId: string) {
 
   return {
     sheet,
-    fields: fieldRows,
+    fields: fieldsWithOptions,
     rows: rowRows.map((row) => {
       const cells: Record<string, unknown> = {};
       for (const field of fieldRows) {
@@ -734,6 +923,39 @@ export async function impactAnalysis(operation: string, entityId: string) {
     return { blocked: false, blockers: [], affectedSheets: sheetRows.length, affectedRows: Number(rowCount[0]?.count ?? 0), snapshotRequired: true };
   }
   return { blocked: false, blockers: [], snapshotRequired: false };
+}
+
+export async function restoreRow(user: ActorUser, rowId: string) {
+  const [before] = await db.select().from(rows).where(eq(rows.id, rowId)).limit(1);
+  if (!before) throw new Error("Row not found");
+  if (!before.deletedAt) throw new Error("Row is not deleted");
+  const [sheet] = await db.select().from(sheets).where(eq(sheets.id, before.sheetId)).limit(1);
+  return db.transaction(async (tx) => {
+    const [after] = await tx
+      .update(rows)
+      .set({ deletedAt: null, updatedBy: user.userId, updatedAt: new Date() })
+      .where(eq(rows.id, rowId))
+      .returning();
+    await writeAudit(
+      {
+        actor: actor(user),
+        actionType: "ROW_UPDATE",
+        entityType: "row",
+        entityId: rowId,
+        parentDocumentId: sheet?.documentId,
+        parentSheetId: sheet?.id,
+        parentSheetName: sheet?.name,
+        rowId,
+        rowVisibleId: before.visibleId,
+        before,
+        after,
+        summary: `Restored row ${before.visibleId ?? before.id}`
+      },
+      tx
+    );
+    if (sheet) await refreshSearchIndex(sheet.documentId, tx);
+    return after;
+  });
 }
 
 export async function softDeleteRow(user: ActorUser, rowId: string) {

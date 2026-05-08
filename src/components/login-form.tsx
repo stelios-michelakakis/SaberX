@@ -25,7 +25,7 @@ export function LoginForm() {
       return;
     }
     const payload = await response.json();
-    router.push(payload.user.mustChangePassword ? "/force-password" : "/workspace");
+    router.push(payload.user.mustChangePassword ? "/force-password" : "/dashboard");
   }
 
   return (
