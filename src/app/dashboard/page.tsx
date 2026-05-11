@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/saberx/page-header";
-import { Icon } from "@/components/saberx/icon";
 import { getWorkspaceData, listIntegrityIssues } from "@/services/repository";
 import { requireUser } from "@/services/auth";
 
@@ -67,8 +66,6 @@ export default async function RepositoryPage() {
       />
 
       <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
-        <Stats docs={docs} issuesCount={totalIssues} />
-
         <div
           style={{
             border: "1px solid var(--line)",
@@ -157,78 +154,6 @@ export default async function RepositoryPage() {
         </div>
       </div>
     </>
-  );
-}
-
-function Stats({
-  docs,
-  issuesCount
-}: {
-  docs: Awaited<ReturnType<typeof getWorkspaceData>>["documents"];
-  issuesCount: number;
-}) {
-  const totalSheets = docs.reduce((acc, d) => acc + d.sheets.length, 0);
-  const totalFields = docs.reduce(
-    (acc, d) => acc + d.sheets.reduce((s, sh) => s + (sh.fields?.length ?? 0), 0),
-    0
-  );
-  const baselined = docs.filter((d) => d.baselineState === "baselined").length;
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 14 }}>
-      <StatCard icon="docs" label="Documents" value={docs.length} note={`${baselined} baselined`} />
-      <StatCard icon="rows" label="Sheets" value={totalSheets} />
-      <StatCard icon="hash" label="Fields" value={totalFields} />
-      <StatCard
-        icon="shield"
-        label="Open integrity issues"
-        value={issuesCount}
-        tone={issuesCount > 0 ? "red" : "muted"}
-      />
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-  note,
-  tone
-}: {
-  icon: string;
-  label: string;
-  value: number;
-  note?: string;
-  tone?: "muted" | "red";
-}) {
-  return (
-    <div
-      style={{
-        border: "1px solid var(--line)",
-        borderRadius: "var(--sx-radius-lg)",
-        padding: 14,
-        background: "var(--panel)",
-        boxShadow: "var(--sx-shadow-sm)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--ink-3)" }}>
-        <Icon name={icon} size={12} />
-        <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-      </div>
-      <div
-        style={{
-          fontSize: 24,
-          fontFamily: "var(--font-display)",
-          color: tone === "red" ? "var(--red)" : "var(--ink)"
-        }}
-      >
-        {value}
-      </div>
-      {note && <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{note}</div>}
-    </div>
   );
 }
 

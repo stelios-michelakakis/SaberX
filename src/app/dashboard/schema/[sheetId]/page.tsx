@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { sheets } from "@/db/schema";
 import { Icon } from "@/components/saberx/icon";
@@ -23,6 +23,11 @@ export default async function SchemaPage({
 
   const grid = await getSheetGrid(sheetId);
   const systemManaged = sheet.sheetKind === "glossary";
+  const docSheets = await db
+    .select({ id: sheets.id, name: sheets.name, sheetKind: sheets.sheetKind })
+    .from(sheets)
+    .where(and(eq(sheets.documentId, sheet.documentId), isNull(sheets.deletedAt)))
+    .orderBy(asc(sheets.displayOrder));
 
   return (
     <>
@@ -47,6 +52,7 @@ export default async function SchemaPage({
         sheetId={sheetId}
         documentId={sheet.documentId}
         systemManaged={systemManaged}
+        sheets={docSheets}
         initialFields={grid.fields.map((f) => ({
           id: f.id,
           label: f.label,
@@ -57,7 +63,11 @@ export default async function SchemaPage({
           unique: f.unique,
           editable: f.editable,
           isIdField: f.isIdField,
-          options: f.options ?? []
+          options: f.options ?? [],
+          bindings:
+            (f as unknown as {
+              bindings?: { allowedSheetId: string; allowSelfReference: boolean }[];
+            }).bindings ?? []
         }))}
       />
     </>

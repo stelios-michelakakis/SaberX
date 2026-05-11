@@ -406,32 +406,34 @@ function EnumEditor({ field, value, onCommit, onClose }: CellProps & { onClose: 
     return [String(value)];
   }, [value]);
   const [draft, setDraft] = useState<string[]>(initial);
+  const draftRef = useRef<string[]>(initial);
+  const committedRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const commitValues = async (next: string[]) => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const same = next.length === initial.length && next.every((v, i) => v === initial[i]);
+    if (!same) {
+      await onCommit(multi ? next : next[0] ?? "");
+    }
+    onClose();
+  };
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        commitAndClose();
+        commitValues(draftRef.current);
       }
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft]);
-
-  const commitAndClose = async () => {
-    const same =
-      draft.length === initial.length && draft.every((v, i) => v === initial[i]);
-    if (!same) {
-      await onCommit(multi ? draft : draft[0] ?? "");
-    }
-    onClose();
-  };
-
-  const toggle = (val: string) => {
-    if (multi) setDraft((d) => (d.includes(val) ? d.filter((v) => v !== val) : [...d, val]));
-    else setDraft([val]);
-  };
+  }, []);
 
   return (
     <td style={baseTd} onClick={(e) => e.stopPropagation()}>
@@ -461,10 +463,12 @@ function EnumEditor({ field, value, onCommit, onClose }: CellProps & { onClose: 
               className={active ? "pill pill-accent" : "pill"}
               style={{ cursor: "pointer", border: "1px solid var(--line)" }}
               onClick={() => {
-                if (multi) toggle(opt.value);
-                else {
-                  toggle(opt.value);
-                  setTimeout(commitAndClose, 0);
+                if (multi) {
+                  setDraft((d) =>
+                    d.includes(opt.value) ? d.filter((v) => v !== opt.value) : [...d, opt.value]
+                  );
+                } else {
+                  commitValues([opt.value]);
                 }
               }}
             >
@@ -476,7 +480,7 @@ function EnumEditor({ field, value, onCommit, onClose }: CellProps & { onClose: 
           <button
             type="button"
             className="sx-btn sx-btn-sm"
-            onClick={commitAndClose}
+            onClick={() => commitValues(draftRef.current)}
             style={{ marginLeft: "auto" }}
           >
             <Icon name="check" size={12} /> Done
@@ -489,7 +493,6 @@ function EnumEditor({ field, value, onCommit, onClose }: CellProps & { onClose: 
 
 function ReferenceEditor({
   field,
-  sheetId,
   value,
   onCommit,
   onClose
@@ -505,38 +508,40 @@ function ReferenceEditor({
   const [draft, setDraft] = useState<string[]>(initial);
   const [targets, setTargets] = useState<ReferenceTarget[] | null>(null);
   const [filter, setFilter] = useState("");
+  const draftRef = useRef<string[]>(initial);
+  const committedRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch(`/api/sheets/${sheetId}/reference-targets`)
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
+    fetch(`/api/fields/${field.id}/reference-targets`)
       .then(async (r) => (r.ok ? r.json() : { targets: [] }))
       .then((data: { targets: ReferenceTarget[] }) => setTargets(data.targets));
-  }, [sheetId]);
+  }, [field.id]);
+
+  const commitValues = async (next: string[]) => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const same = next.length === initial.length && next.every((v, i) => v === initial[i]);
+    if (!same) {
+      await onCommit(multi ? next : next[0] ?? "");
+    }
+    onClose();
+  };
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        commitAndClose();
+        commitValues(draftRef.current);
       }
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft]);
-
-  const commitAndClose = async () => {
-    const same =
-      draft.length === initial.length && draft.every((v, i) => v === initial[i]);
-    if (!same) {
-      await onCommit(multi ? draft : draft[0] ?? "");
-    }
-    onClose();
-  };
-
-  const toggle = (id: string) => {
-    if (multi) setDraft((d) => (d.includes(id) ? d.filter((v) => v !== id) : [...d, id]));
-    else setDraft([id]);
-  };
+  }, []);
 
   const filtered = (targets ?? []).filter(
     (t) =>
@@ -599,8 +604,15 @@ function ReferenceEditor({
                 key={t.rowId}
                 type="button"
                 onClick={() => {
-                  toggle(t.rowId);
-                  if (!multi) setTimeout(commitAndClose, 0);
+                  if (multi) {
+                    setDraft((d) =>
+                      d.includes(t.rowId)
+                        ? d.filter((v) => v !== t.rowId)
+                        : [...d, t.rowId]
+                    );
+                  } else {
+                    commitValues([t.rowId]);
+                  }
                 }}
                 style={{
                   display: "flex",
@@ -633,14 +645,26 @@ function ReferenceEditor({
           })}
         </div>
         {multi && (
-          <button
-            type="button"
-            className="sx-btn sx-btn-sm"
-            onClick={commitAndClose}
-            style={{ alignSelf: "flex-end" }}
-          >
-            <Icon name="check" size={12} /> Done ({draft.length})
-          </button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {draft.length > 0 && (
+              <button
+                type="button"
+                className="sx-btn sx-btn-ghost sx-btn-sm"
+                onClick={() => setDraft([])}
+                style={{ padding: "4px 8px" }}
+              >
+                <Icon name="x" size={12} /> Clear
+              </button>
+            )}
+            <button
+              type="button"
+              className="sx-btn sx-btn-primary sx-btn-sm"
+              onClick={() => commitValues(draftRef.current)}
+              style={{ marginLeft: "auto" }}
+            >
+              <Icon name="check" size={12} /> Done ({draft.length})
+            </button>
+          </div>
         )}
       </div>
     </td>

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { Icon } from "@/components/saberx/icon";
 import { useToast } from "@/components/saberx/toast";
 import { Cell, cellDisplay, readCell, type FieldVm } from "./cell-editor";
 import { EditDocumentModal } from "./edit-document-modal";
 import { NewSheetModal } from "./new-sheet-modal";
+import { AddColumnModal } from "./add-column-modal";
 
 type DocumentVm = {
   id: string;
@@ -72,6 +73,7 @@ export function DocumentClient({
   const [deleting, setDeleting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [newSheetOpen, setNewSheetOpen] = useState(false);
+  const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -259,24 +261,11 @@ export function DocumentClient({
 
   const headerActions = (
     <>
-      <button
-        className="sx-btn sx-btn-sm"
-        type="button"
-        onClick={() => setEditOpen(true)}
-        title="Edit document metadata"
-      >
-        <Icon name="edit" size={12} /> Edit
-      </button>
-      <button
-        className="sx-btn sx-btn-sm"
-        type="button"
-        onClick={() => setNewSheetOpen(true)}
-        title="Add a new sheet"
-      >
-        <Icon name="plus" size={12} /> New sheet
-      </button>
       <Link href={`/dashboard/schema/${activeSheetId}`} className="sx-btn sx-btn-sm">
         <Icon name="schema" size={12} /> Schema
+      </Link>
+      <Link href={`/dashboard/trace?document=${document.id}`} className="sx-btn sx-btn-sm">
+        <Icon name="trace" size={12} /> Trace
       </Link>
       <button className="sx-btn sx-btn-sm" type="button" onClick={onExport}>
         <Icon name="download" size={12} /> Export
@@ -348,16 +337,24 @@ export function DocumentClient({
             >
               {(document.templateType || "Document").toUpperCase()}
             </div>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 22,
-                fontWeight: 600,
-                letterSpacing: "-0.015em"
-              }}
-            >
-              {document.title}
-            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <InlineTitle
+                documentId={document.id}
+                currentTitle={document.title}
+                currentVersion={document.version}
+                autoEdit={searchParams?.get("renameTitle") === "1"}
+              />
+              <button
+                type="button"
+                className="sx-btn sx-btn-ghost sx-btn-sm"
+                style={{ padding: 5 }}
+                onClick={() => setEditOpen(true)}
+                title="Edit document details"
+                aria-label="Edit document details"
+              >
+                <Icon name="edit" size={14} />
+              </button>
+            </div>
             {document.description && (
               <p
                 style={{
@@ -420,6 +417,26 @@ export function DocumentClient({
             {s.name}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setNewSheetOpen(true)}
+          title="Add a new sheet"
+          style={{
+            border: 0,
+            background: "transparent",
+            padding: "10px 12px",
+            fontSize: 12.5,
+            fontFamily: "inherit",
+            color: "var(--ink-3)",
+            borderBottom: "2px solid transparent",
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6
+          }}
+        >
+          <Icon name="plus" size={12} /> New sheet
+        </button>
       </div>
 
       <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -442,6 +459,7 @@ export function DocumentClient({
               onDeleteRow={onDeleteRow}
               onCreateRow={onCreateRow}
               creatingRow={creatingRow}
+              onAddColumn={() => setAddColumnOpen(true)}
             />
           )}
         </div>
@@ -472,7 +490,158 @@ export function DocumentClient({
           }}
         />
       )}
+
+      {addColumnOpen && grid && (
+        <AddColumnModal
+          sheetId={grid.sheet.id}
+          sheets={sheets.map((s) => ({ id: s.id, name: s.name, sheetKind: s.sheetKind }))}
+          onClose={() => setAddColumnOpen(false)}
+          onCreated={async () => {
+            await refreshGrid();
+            router.refresh();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function InlineTitle({
+  documentId,
+  currentTitle,
+  currentVersion,
+  autoEdit
+}: {
+  documentId: string;
+  currentTitle: string;
+  currentVersion: number;
+  autoEdit: boolean;
+}) {
+  const toast = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [editing, setEditing] = useState(autoEdit);
+  const [draft, setDraft] = useState(currentTitle);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDraft(currentTitle);
+  }, [currentTitle]);
+
+  useEffect(() => {
+    if (autoEdit && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+      // Clear the renameTitle query param so refreshes don't re-trigger
+      const params = new URLSearchParams(searchParams?.toString());
+      params.delete("renameTitle");
+      const qs = params.toString();
+      router.replace(`/dashboard/documents/${documentId}${qs ? `?${qs}` : ""}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit]);
+
+  const commit = async () => {
+    const next = draft.trim();
+    if (!next || next === currentTitle) {
+      setDraft(currentTitle);
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/documents/${documentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next, version: currentVersion })
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        toast.error("Could not rename document", { detail: detail.error });
+        setDraft(currentTitle);
+      } else {
+        toast.success("Renamed", { detail: next });
+        router.refresh();
+      }
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            setDraft(currentTitle);
+            setEditing(false);
+          }
+        }}
+        disabled={saving}
+        placeholder="Untitled document"
+        style={{
+          margin: 0,
+          padding: "2px 6px",
+          marginLeft: -7,
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: "-0.015em",
+          fontFamily: "inherit",
+          color: "var(--ink)",
+          background: "var(--panel-2)",
+          border: "1px solid var(--sx-accent)",
+          borderRadius: 6,
+          outline: "none",
+          width: "100%",
+          maxWidth: 720
+        }}
+      />
+    );
+  }
+
+  return (
+    <h1
+      onClick={() => setEditing(true)}
+      title="Click to rename"
+      style={{
+        margin: 0,
+        padding: "2px 6px",
+        marginLeft: -7,
+        fontSize: 22,
+        fontWeight: 600,
+        letterSpacing: "-0.015em",
+        color: "var(--ink)",
+        cursor: "text",
+        borderRadius: 6,
+        border: "1px solid transparent",
+        display: "inline-block",
+        maxWidth: 720,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--panel-2)";
+        e.currentTarget.style.borderColor = "var(--line)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+        e.currentTarget.style.borderColor = "transparent";
+      }}
+    >
+      {currentTitle || (
+        <span style={{ color: "var(--ink-4)", fontStyle: "italic" }}>Untitled document</span>
+      )}
+    </h1>
   );
 }
 
@@ -588,7 +757,8 @@ function Grid({
   onPatchCell,
   onDeleteRow,
   onCreateRow,
-  creatingRow
+  creatingRow,
+  onAddColumn
 }: {
   grid: GridResponse;
   selectedRow: string | null;
@@ -597,9 +767,10 @@ function Grid({
   onDeleteRow: (rowId: string) => void;
   onCreateRow: () => void;
   creatingRow: boolean;
+  onAddColumn: () => void;
 }) {
-  const colCount = grid.fields.length + 1;
   const systemManaged = grid.sheet.sheetKind === "glossary";
+  const colCount = grid.fields.length + (systemManaged ? 1 : 2);
   return (
     <>
       {systemManaged && (
@@ -664,6 +835,36 @@ function Grid({
                   background: "var(--panel-2)"
                 }}
               />
+              {!systemManaged && (
+                <th
+                  style={{
+                    width: 140,
+                    padding: "4px 8px",
+                    borderBottom: "1px solid var(--line)",
+                    borderLeft: "1px dashed var(--line-strong)",
+                    background: "var(--panel-2)",
+                    textAlign: "left"
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={onAddColumn}
+                    className="sx-btn sx-btn-ghost sx-btn-sm"
+                    style={{
+                      width: "100%",
+                      padding: "4px 8px",
+                      justifyContent: "flex-start",
+                      color: "var(--ink-3)",
+                      fontSize: 11,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase"
+                    }}
+                    title="Add a column to this sheet"
+                  >
+                    <Icon name="plus" size={12} /> Add column
+                  </button>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -718,6 +919,14 @@ function Grid({
                       </button>
                     )}
                   </td>
+                  {!systemManaged && (
+                    <td
+                      style={{
+                        borderLeft: "1px dashed var(--line)",
+                        background: "var(--panel-2)"
+                      }}
+                    />
+                  )}
                 </tr>
               );
             })}

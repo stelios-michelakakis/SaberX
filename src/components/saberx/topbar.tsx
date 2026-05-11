@@ -85,12 +85,10 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
   };
 
   const onNewDocument = async () => {
-    const title = window.prompt("New document title");
-    if (!title) return;
     const res = await fetch("/api/documents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title })
+      body: JSON.stringify({ title: "Untitled document" })
     });
     if (!res.ok) {
       const detail = await res.json().catch(() => ({}));
@@ -98,8 +96,7 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
       return;
     }
     const data: { document: { id: string } } = await res.json();
-    toast.success("Document created");
-    router.push(`/dashboard/documents/${data.document.id}`);
+    router.push(`/dashboard/documents/${data.document.id}?renameTitle=1`);
     router.refresh();
   };
 
@@ -161,25 +158,48 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
           display: "flex",
           alignItems: "center",
           gap: 8,
-          width: 280,
+          flex: "0 1 320px",
+          minWidth: 200,
+          maxWidth: 360,
           height: 30,
-          padding: "0 10px",
+          padding: "0 8px 0 10px",
           borderRadius: 7,
           border: "1px solid var(--line)",
           background: "var(--bg-2)",
           color: "var(--ink-3)",
           fontFamily: "inherit",
           fontSize: 12.5,
-          textDecoration: "none"
+          textDecoration: "none",
+          overflow: "hidden"
         }}
       >
-        <Icon name="search" size={12} />
-        <span>Search documents, fields, rows…</span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
+        <Icon name="search" size={12} style={{ flex: "none" }} />
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap"
+          }}
+        >
+          Search documents, fields, rows…
+        </span>
+        <span style={{ display: "flex", gap: 3, flex: "none" }}>
           <span className="kbd">⌘</span>
           <span className="kbd">K</span>
         </span>
       </Link>
+
+      <div
+        style={{
+          width: 1,
+          height: 18,
+          background: "var(--line)",
+          margin: "0 2px",
+          flex: "none"
+        }}
+      />
 
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <button
@@ -189,8 +209,9 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
           title="Undo last action (⌘Z)"
           style={{ padding: 5 }}
           type="button"
+          aria-label="Undo last action"
         >
-          <Icon name="refresh" />
+          <Icon name="undo" />
         </button>
         <button
           className="sx-btn sx-btn-ghost sx-btn-sm"

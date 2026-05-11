@@ -19,24 +19,22 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Documents", icon: "docs", group: "main" },
-  { href: "/dashboard/documents", label: "Active document", icon: "doc", group: "main", indent: true, matchPrefix: true },
-  { href: "/dashboard/schema", label: "Schema", icon: "schema", group: "main", indent: true, matchPrefix: true },
-  { href: "/dashboard/trace", label: "Trace links", icon: "trace", group: "main", indent: true },
-  { href: "/dashboard/snapshots", label: "Snapshots", icon: "history", group: "main", indent: true },
   { href: "/dashboard/search", label: "Search", icon: "search", group: "tools" },
   { href: "/dashboard/audit", label: "Audit log", icon: "audit", group: "tools" },
   { href: "/dashboard/integrity", label: "Integrity", icon: "shield", group: "tools" },
+  { href: "/dashboard/snapshots", label: "Snapshots", icon: "history", group: "tools" },
   { href: "/dashboard/admin", label: "Admin", icon: "users", group: "tools" },
   { href: "/dashboard/profile", label: "Profile", icon: "user", group: "tools" }
 ];
 
 type Props = {
   user: { name: string; role: string };
-  programName: string;
+  programName?: string;
   integrityCount?: number;
+  documents?: { id: string; title: string }[];
 };
 
-export function Sidebar({ user, programName, integrityCount = 0 }: Props) {
+export function Sidebar({ user, integrityCount = 0, documents = [] }: Props) {
   const { tweaks } = useTweaks();
   const collapsed = tweaks.sidebarCollapsed;
   const pathname = usePathname() ?? "";
@@ -46,6 +44,18 @@ export function Sidebar({ user, programName, integrityCount = 0 }: Props) {
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
+  };
+
+  const handleNewDocument = async () => {
+    const res = await fetch("/api/documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Untitled document" })
+    });
+    if (!res.ok) return;
+    const data: { document: { id: string } } = await res.json();
+    router.push(`/dashboard/documents/${data.document.id}?renameTitle=1`);
+    router.refresh();
   };
 
   const isActive = (item: NavItem) => {
@@ -74,29 +84,22 @@ export function Sidebar({ user, programName, integrityCount = 0 }: Props) {
           display: "flex",
           alignItems: "center",
           gap: 10,
-          borderBottom: "1px solid var(--line)"
+          borderBottom: "1px solid var(--line)",
+          justifyContent: collapsed ? "center" : "flex-start"
         }}
       >
-        <div
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 5,
-            background: "var(--ink)",
-            color: "var(--bg)",
-            display: "grid",
-            placeItems: "center",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: 11,
-            flex: "none"
-          }}
-        >
-          S
-        </div>
-        {!collapsed && (
+        {!collapsed ? (
           <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em" }}>SaberX</div>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                color: "var(--ink)"
+              }}
+            >
+              EDF SABER
+            </div>
             <div
               style={{
                 fontSize: 10.5,
@@ -108,48 +111,21 @@ export function Sidebar({ user, programName, integrityCount = 0 }: Props) {
               Engineering Docs
             </div>
           </div>
-        )}
-      </div>
-
-      {!collapsed && (
-        <div style={{ padding: "10px 10px 4px" }}>
+        ) : (
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "6px 8px",
-              borderRadius: 6,
-              border: "1px solid var(--line)",
-              background: "var(--panel)"
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              color: "var(--ink-2)",
+              fontFamily: "var(--font-mono)"
             }}
+            title="EDF SABER"
           >
-            <Icon name="package" size={12} style={{ color: "var(--sx-accent)" }} />
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                lineHeight: 1.15,
-                minWidth: 0,
-                flex: 1
-              }}
-            >
-              <div style={{ fontSize: 11, color: "var(--ink-3)" }}>Program</div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 500,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap"
-                }}
-              >
-                {programName}
-              </div>
-            </div>
+            EDF
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <nav
         style={{
@@ -162,9 +138,65 @@ export function Sidebar({ user, programName, integrityCount = 0 }: Props) {
         }}
       >
         {!collapsed && <SectionLabel label="Workspace" />}
-        {NAV.filter((n) => n.group === "main").map((n) => (
-          <NavLink key={n.href} item={n} active={isActive(n)} collapsed={collapsed} />
-        ))}
+        {NAV.filter((n) => n.group === "main").map((n) =>
+          n.href === "/dashboard" ? (
+            <DocumentsRow
+              key={n.href}
+              item={n}
+              active={isActive(n)}
+              collapsed={collapsed}
+              onAdd={handleNewDocument}
+            />
+          ) : (
+            <NavLink key={n.href} item={n} active={isActive(n)} collapsed={collapsed} />
+          )
+        )}
+        {documents.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {documents.map((d) => {
+              const href = `/dashboard/documents/${d.id}`;
+              const active = pathname === href || pathname.startsWith(href + "/");
+              return (
+                <Link
+                  key={d.id}
+                  href={href}
+                  title={collapsed ? d.title : undefined}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: collapsed ? "6px 8px" : "5px 8px 5px 22px",
+                    borderRadius: 6,
+                    background: active ? "var(--bg-3)" : "transparent",
+                    color: active ? "var(--ink)" : "var(--ink-2)",
+                    textDecoration: "none",
+                    fontSize: 12.5,
+                    fontWeight: active ? 500 : 400,
+                    justifyContent: collapsed ? "center" : "flex-start"
+                  }}
+                >
+                  <Icon
+                    name="doc"
+                    size={12}
+                    style={{ color: active ? "var(--ink)" : "var(--ink-4)", flex: "none" }}
+                  />
+                  {!collapsed && (
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}
+                    >
+                      {d.title || "Untitled document"}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
         {!collapsed && <SectionLabel label="Tools" pad />}
         {collapsed && <div style={{ height: 1, background: "var(--line)", margin: "8px 6px" }} />}
         {NAV.filter((n) => n.group === "tools").map((n) => (
@@ -218,7 +250,7 @@ export function Sidebar({ user, programName, integrityCount = 0 }: Props) {
               type="button"
               onClick={handleLogout}
             >
-              <Icon name="lock" />
+              <Icon name="logout" />
             </button>
           </>
         )}
@@ -240,6 +272,67 @@ function SectionLabel({ label, pad }: { label: string; pad?: boolean }) {
       }}
     >
       {label}
+    </div>
+  );
+}
+
+function DocumentsRow({
+  item,
+  active,
+  collapsed,
+  onAdd
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        padding: collapsed ? 0 : "0 0 0 0"
+      }}
+    >
+      <Link
+        href={item.href}
+        title={collapsed ? item.label : undefined}
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: collapsed ? "7px 8px" : "6px 8px",
+          borderRadius: 6,
+          background: active ? "var(--bg-3)" : "transparent",
+          color: active ? "var(--ink)" : "var(--ink-2)",
+          textDecoration: "none",
+          fontSize: 12.5,
+          fontWeight: active ? 500 : 400,
+          justifyContent: collapsed ? "center" : "flex-start"
+        }}
+      >
+        <Icon
+          name={item.icon}
+          size={12}
+          style={{ color: active ? "var(--ink)" : "var(--ink-3)", flex: "none" }}
+        />
+        {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
+      </Link>
+      {!collapsed && (
+        <button
+          type="button"
+          onClick={onAdd}
+          aria-label="New document"
+          title="New document"
+          className="sx-btn sx-btn-ghost sx-btn-sm"
+          style={{ padding: 4 }}
+        >
+          <Icon name="plus" size={12} />
+        </button>
+      )}
     </div>
   );
 }

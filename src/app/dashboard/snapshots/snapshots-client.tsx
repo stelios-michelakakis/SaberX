@@ -121,7 +121,14 @@ export function SnapshotsClient({
               className="select"
               value={activeDocId}
               onChange={(e) => onPickDoc(e.target.value)}
-              style={{ height: 28, fontSize: 12.5, minHeight: 0 }}
+              style={{
+                height: 28,
+                minHeight: 0,
+                width: "auto",
+                minWidth: 220,
+                fontSize: 12.5,
+                padding: "4px 28px 4px 10px"
+              }}
             >
               {documents.map((d) => (
                 <option key={d.id} value={d.id}>

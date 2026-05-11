@@ -1,10 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/components/saberx/icon";
 import { useToast } from "@/components/saberx/toast";
-import { FIELD_TYPES } from "@/lib/constants";
+import {
+  EMPTY_FIELD_VALUE,
+  FieldFormFields,
+  buildFieldPayload,
+  needsOptions,
+  type FieldFormValue,
+  type SheetOption
+} from "@/components/saberx/field-form";
 
 const FIELD_TYPE_ICON: Record<string, string> = {
   auto_id: "hash",
@@ -36,25 +43,28 @@ type FieldRow = {
   editable: boolean;
   isIdField: boolean;
   options: { label: string; value: string }[];
+  bindings: { allowedSheetId: string; allowSelfReference: boolean }[];
 };
 
 export function SchemaClient({
   sheetId,
   documentId,
   systemManaged,
-  initialFields
+  initialFields,
+  sheets
 }: {
   sheetId: string;
   documentId: string;
   systemManaged: boolean;
   initialFields: FieldRow[];
+  sheets: SheetOption[];
 }) {
   const router = useRouter();
   const toast = useToast();
   const [fields, setFields] = useState(initialFields);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmingArchiveId, setConfirmingArchiveId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creatingOpen, setCreatingOpen] = useState(false);
 
   const refresh = async () => {
     const r = await fetch(`/api/sheets/${sheetId}`);
@@ -118,8 +128,7 @@ export function SchemaClient({
         >
           <Icon name="info" size={12} style={{ color: "var(--sx-accent)" }} />
           <span>
-            <strong>Glossary schema is system-managed.</strong> The Block / Field or Code / Value
-            or Meaning columns are fixed.
+            <strong>Glossary schema is system-managed.</strong>
           </span>
         </div>
       )}
@@ -140,8 +149,7 @@ export function SchemaClient({
               <Th>Label</Th>
               <Th>Slug</Th>
               <Th>Type</Th>
-              <Th>Required</Th>
-              <Th>Unique</Th>
+              <Th>Flags</Th>
               <Th>Description</Th>
               <Th> </Th>
             </tr>
@@ -150,7 +158,7 @@ export function SchemaClient({
             {fields.length === 0 && (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={7}
                   style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}
                 >
                   No fields yet. Click <strong>+ Add field</strong> below.
@@ -164,6 +172,8 @@ export function SchemaClient({
                 <EditFieldRow
                   key={f.id}
                   field={f}
+                  sheets={sheets}
+                  currentSheetId={sheetId}
                   onClose={() => setEditingId(null)}
                   onSaved={async () => {
                     setEditingId(null);
@@ -222,10 +232,29 @@ export function SchemaClient({
                         style={{ color: "var(--ink-3)" }}
                       />
                       {f.type}
+                      {(f.type === "single_reference" || f.type === "multi_reference") &&
+                        f.bindings.length > 0 && (
+                          <span
+                            className="pill"
+                            title="Reference targets restricted"
+                            style={{ fontSize: 10 }}
+                          >
+                            {f.bindings.length} target
+                            {f.bindings.length === 1 ? "" : "s"}
+                          </span>
+                        )}
                     </span>
                   </Td>
-                  <Td>{f.required ? <span className="pill pill-amber">Required</span> : <Dim />}</Td>
-                  <Td>{f.unique ? <span className="pill pill-accent">Unique</span> : <Dim />}</Td>
+                  <Td>
+                    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+                      {f.required && <span className="pill pill-amber">Required</span>}
+                      {f.unique && <span className="pill pill-accent">Unique</span>}
+                      {!f.editable && !f.isIdField && (
+                        <span className="pill">Read-only</span>
+                      )}
+                      {!f.required && !f.unique && (f.editable || f.isIdField) && <Dim />}
+                    </span>
+                  </Td>
                   <Td>{f.description || <Dim />}</Td>
                   <Td>
                     {editable && (
@@ -279,8 +308,9 @@ export function SchemaClient({
             {!systemManaged && (
               <NewFieldRow
                 sheetId={sheetId}
-                creating={creating}
-                setCreating={setCreating}
+                open={creatingOpen}
+                setOpen={setCreatingOpen}
+                sheets={sheets}
                 onCreated={async () => {
                   await refresh();
                   router.refresh();
@@ -299,34 +329,32 @@ export function SchemaClient({
 
 function NewFieldRow({
   sheetId,
-  creating,
-  setCreating,
+  open,
+  setOpen,
+  sheets,
   onCreated
 }: {
   sheetId: string;
-  creating: boolean;
-  setCreating: (v: boolean) => void;
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  sheets: SheetOption[];
   onCreated: () => void | Promise<void>;
 }) {
   const toast = useToast();
-  const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState("");
-  const [type, setType] = useState<(typeof FIELD_TYPES)[number]>("short_text");
-  const [description, setDescription] = useState("");
-  const [required, setRequired] = useState(false);
-  const [options, setOptions] = useState("");
+  const [value, setValue] = useState<FieldFormValue>(EMPTY_FIELD_VALUE);
+  const [submitting, setSubmitting] = useState(false);
+
+  const reset = () => {
+    setValue(EMPTY_FIELD_VALUE);
+  };
 
   const submit = async () => {
-    setCreating(true);
+    setSubmitting(true);
     try {
-      const optionList = options
-        .split(/[,\n]/)
-        .map((o) => o.trim())
-        .filter(Boolean);
       const res = await fetch(`/api/sheets/${sheetId}/fields`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label, type, description, required, options: optionList })
+        body: JSON.stringify(buildFieldPayload(value))
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
@@ -334,15 +362,11 @@ function NewFieldRow({
         return;
       }
       toast.success("Field created");
-      setLabel("");
-      setDescription("");
-      setRequired(false);
-      setOptions("");
-      setType("short_text");
+      reset();
       setOpen(false);
       await onCreated();
     } finally {
-      setCreating(false);
+      setSubmitting(false);
     }
   };
 
@@ -356,7 +380,7 @@ function NewFieldRow({
           cursor: "pointer"
         }}
       >
-        <td colSpan={8} style={{ padding: "10px 14px", color: "var(--ink-3)" }}>
+        <td colSpan={7} style={{ padding: "10px 14px", color: "var(--ink-3)" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <Icon name="plus" size={12} /> Add field
           </span>
@@ -365,80 +389,30 @@ function NewFieldRow({
     );
   }
 
-  const needsOptions = ["single_enum", "multi_enum", "status", "tag_list"].includes(type);
-
   return (
     <tr style={{ borderTop: "1px dashed var(--line-strong)", background: "var(--accent-soft)" }}>
-      <td colSpan={8} style={{ padding: 14 }}>
+      <td colSpan={7} style={{ padding: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Field label="Label">
-            <input
-              className="input"
-              autoFocus
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Priority"
-            />
-          </Field>
-          <Field label="Type">
-            <select
-              className="select"
-              value={type}
-              onChange={(e) => setType(e.target.value as (typeof FIELD_TYPES)[number])}
-            >
-              {FIELD_TYPES.filter((t) => t !== "auto_id").map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Description" full>
-            <textarea
-              className="textarea"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-            />
-          </Field>
-          {needsOptions && (
-            <Field label="Options (comma- or newline-separated)" full>
-              <textarea
-                className="textarea"
-                rows={2}
-                value={options}
-                onChange={(e) => setOptions(e.target.value)}
-                placeholder="P0, P1, P2"
-              />
-            </Field>
-          )}
-          <label
+          <FieldFormFields
+            value={value}
+            onChange={setValue}
+            sheets={sheets}
+            currentSheetId={sheetId}
+          />
+          <div
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12.5,
-              color: "var(--ink-2)",
-              gridColumn: "1 / -1"
+              gap: 8,
+              gridColumn: "1 / -1",
+              justifyContent: "flex-end"
             }}
           >
-            <input
-              type="checkbox"
-              checked={required}
-              onChange={(e) => setRequired(e.target.checked)}
-            />
-            Required
-          </label>
-          <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1", justifyContent: "flex-end" }}>
             <button
               type="button"
               className="sx-btn sx-btn-sm"
               onClick={() => {
+                reset();
                 setOpen(false);
-                setLabel("");
-                setDescription("");
-                setRequired(false);
-                setOptions("");
               }}
             >
               Cancel
@@ -447,9 +421,13 @@ function NewFieldRow({
               type="button"
               className="sx-btn sx-btn-primary sx-btn-sm"
               onClick={submit}
-              disabled={creating || !label.trim()}
+              disabled={
+                submitting ||
+                !value.label.trim() ||
+                (needsOptions(value.type) && !value.options.trim())
+              }
             >
-              {creating ? "Creating…" : "Create field"}
+              {submitting ? "Creating…" : "Create field"}
             </button>
           </div>
         </div>
@@ -460,41 +438,66 @@ function NewFieldRow({
 
 function EditFieldRow({
   field,
+  sheets,
+  currentSheetId,
   onClose,
   onSaved
 }: {
   field: FieldRow;
+  sheets: SheetOption[];
+  currentSheetId: string;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
   const toast = useToast();
-  const [label, setLabel] = useState(field.label);
-  const [description, setDescription] = useState(field.description);
-  const [required, setRequired] = useState(field.required);
-  const [unique, setUnique] = useState(field.unique);
-  const [options, setOptions] = useState(field.options.map((o) => o.value).join(", "));
+  const [value, setValue] = useState<FieldFormValue>({
+    label: field.label,
+    type: field.type as FieldFormValue["type"],
+    description: field.description,
+    required: field.required,
+    unique: field.unique,
+    editable: field.editable,
+    options: field.options.map((o) => o.value).join(", "),
+    bindings: field.bindings.map((b) => ({
+      allowedSheetId: b.allowedSheetId,
+      allowSelfReference: b.allowSelfReference
+    }))
+  });
   const [saving, setSaving] = useState(false);
 
-  const needsOptions = ["single_enum", "multi_enum", "status", "tag_list"].includes(field.type);
+  useEffect(() => {
+    setValue({
+      label: field.label,
+      type: field.type as FieldFormValue["type"],
+      description: field.description,
+      required: field.required,
+      unique: field.unique,
+      editable: field.editable,
+      options: field.options.map((o) => o.value).join(", "),
+      bindings: field.bindings.map((b) => ({
+        allowedSheetId: b.allowedSheetId,
+        allowSelfReference: b.allowSelfReference
+      }))
+    });
+  }, [field.id]);
 
   const submit = async () => {
     setSaving(true);
     try {
-      const optionList = needsOptions
-        ? options
-            .split(/[,\n]/)
-            .map((o) => o.trim())
-            .filter(Boolean)
-        : undefined;
+      const payload = buildFieldPayload(value);
       const res = await fetch(`/api/fields/${field.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          label,
-          description,
-          required,
-          unique,
-          ...(optionList ? { options: optionList } : {})
+          label: payload.label,
+          description: payload.description,
+          required: payload.required,
+          unique: payload.unique,
+          editable: payload.editable,
+          ...(needsOptions(value.type) ? { options: payload.options } : {}),
+          ...(payload.bindings.length > 0 || field.bindings.length > 0
+            ? { bindings: payload.bindings }
+            : {})
         })
       });
       if (!res.ok) {
@@ -511,70 +514,23 @@ function EditFieldRow({
 
   return (
     <tr style={{ borderTop: "1px solid var(--line)", background: "var(--accent-soft)" }}>
-      <td colSpan={8} style={{ padding: 14 }}>
+      <td colSpan={7} style={{ padding: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Field label="Label">
-            <input
-              className="input"
-              autoFocus
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </Field>
-          <Field label="Type (immutable)">
-            <input className="input" value={field.type} disabled />
-          </Field>
-          <Field label="Description" full>
-            <textarea
-              className="textarea"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-            />
-          </Field>
-          {needsOptions && (
-            <Field label="Options (comma- or newline-separated)" full>
-              <textarea
-                className="textarea"
-                rows={2}
-                value={options}
-                onChange={(e) => setOptions(e.target.value)}
-              />
-            </Field>
-          )}
-          <label
+          <FieldFormFields
+            value={value}
+            onChange={setValue}
+            sheets={sheets}
+            currentSheetId={currentSheetId}
+            lockType
+          />
+          <div
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12.5,
-              color: "var(--ink-2)"
+              gap: 8,
+              gridColumn: "1 / -1",
+              justifyContent: "flex-end"
             }}
           >
-            <input
-              type="checkbox"
-              checked={required}
-              onChange={(e) => setRequired(e.target.checked)}
-            />
-            Required
-          </label>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12.5,
-              color: "var(--ink-2)"
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={unique}
-              onChange={(e) => setUnique(e.target.checked)}
-            />
-            Unique
-          </label>
-          <div style={{ display: "flex", gap: 8, gridColumn: "1 / -1", justifyContent: "flex-end" }}>
             <button type="button" className="sx-btn sx-btn-sm" onClick={onClose}>
               Cancel
             </button>
@@ -582,7 +538,7 @@ function EditFieldRow({
               type="button"
               className="sx-btn sx-btn-primary sx-btn-sm"
               onClick={submit}
-              disabled={saving || !label.trim()}
+              disabled={saving || !value.label.trim()}
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
@@ -590,32 +546,6 @@ function EditFieldRow({
         </div>
       </td>
     </tr>
-  );
-}
-
-function Field({
-  label,
-  children,
-  full
-}: {
-  label: string;
-  children: React.ReactNode;
-  full?: boolean;
-}) {
-  return (
-    <label style={{ display: "grid", gap: 4, gridColumn: full ? "1 / -1" : undefined }}>
-      <span
-        style={{
-          fontSize: 11,
-          color: "var(--ink-3)",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em"
-        }}
-      >
-        {label}
-      </span>
-      {children}
-    </label>
   );
 }
 

@@ -288,6 +288,76 @@ export async function updateDocument(user: ActorUser, id: string, input: Partial
   return after;
 }
 
+export async function softDeleteSheet(user: ActorUser, sheetId: string) {
+  const [before] = await db.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
+  if (!before) throw new Error("Sheet not found");
+  if (before.deletedAt) return before;
+  if (before.isSystemReserved)
+    throw new Error("Reserved sheets (Instructions / Glossary / Open Issues) cannot be deleted.");
+  const impact = await impactAnalysis("sheet_delete", sheetId);
+  if (impact.blocked) throw new Error(impact.blockers[0]);
+  const txId = randomUUID();
+  return db.transaction(async (tx) => {
+    const [after] = await tx
+      .update(sheets)
+      .set({ deletedAt: new Date(), updatedBy: user.userId, updatedAt: new Date() })
+      .where(eq(sheets.id, sheetId))
+      .returning();
+    await writeAudit(
+      {
+        transactionId: txId,
+        actor: actor(user),
+        actionType: "SHEET_DELETE",
+        entityType: "sheet",
+        entityId: sheetId,
+        parentDocumentId: before.documentId,
+        parentSheetId: sheetId,
+        parentSheetName: before.name,
+        before,
+        after,
+        summary: `Archived sheet ${before.name}`
+      },
+      tx
+    );
+    await refreshGlossary(before.documentId, user, tx, txId);
+    await refreshSearchIndex(before.documentId, tx);
+    return after;
+  });
+}
+
+export async function restoreSheet(user: ActorUser, sheetId: string) {
+  const [before] = await db.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
+  if (!before) throw new Error("Sheet not found");
+  if (!before.deletedAt) throw new Error("Sheet is not deleted");
+  const txId = randomUUID();
+  return db.transaction(async (tx) => {
+    const [after] = await tx
+      .update(sheets)
+      .set({ deletedAt: null, updatedBy: user.userId, updatedAt: new Date() })
+      .where(eq(sheets.id, sheetId))
+      .returning();
+    await writeAudit(
+      {
+        transactionId: txId,
+        actor: actor(user),
+        actionType: "SHEET_UPDATE",
+        entityType: "sheet",
+        entityId: sheetId,
+        parentDocumentId: before.documentId,
+        parentSheetId: sheetId,
+        parentSheetName: before.name,
+        before,
+        after,
+        summary: `Restored sheet ${before.name}`
+      },
+      tx
+    );
+    await refreshGlossary(before.documentId, user, tx, txId);
+    await refreshSearchIndex(before.documentId, tx);
+    return after;
+  });
+}
+
 export async function createUserSheet(user: ActorUser, documentId: string, input: { name: string; description?: string; idPrefix: string; zeroPad: number }) {
   assertNoCompoundPrefix(input.idPrefix);
   const txId = randomUUID();
@@ -381,7 +451,21 @@ export async function updateSheet(user: ActorUser, sheetId: string, input: Parti
   return after;
 }
 
-export async function createField(user: ActorUser, sheetId: string, input: { label: string; type: FieldType; description?: string; required?: boolean; unique?: boolean; editable?: boolean; options?: string[]; validation?: Record<string, unknown> }) {
+export async function createField(
+  user: ActorUser,
+  sheetId: string,
+  input: {
+    label: string;
+    type: FieldType;
+    description?: string;
+    required?: boolean;
+    unique?: boolean;
+    editable?: boolean;
+    options?: string[];
+    validation?: Record<string, unknown>;
+    bindings?: { allowedSheetId: string; allowSelfReference?: boolean }[];
+  }
+) {
   if (!FIELD_TYPES.includes(input.type)) throw new Error("Unsupported field type");
   const txId = randomUUID();
   return db.transaction(async (tx) => {
@@ -410,6 +494,34 @@ export async function createField(user: ActorUser, sheetId: string, input: { lab
       .returning();
     if (input.options?.length) {
       await tx.insert(fieldOptions).values(input.options.map((option, index) => ({ fieldId: field.id, label: option, value: option, displayOrder: index + 1 })));
+    }
+    const isReference = input.type === "single_reference" || input.type === "multi_reference";
+    if (isReference && input.bindings && input.bindings.length > 0) {
+      const validSheets = await tx
+        .select({ id: sheets.id })
+        .from(sheets)
+        .where(
+          and(
+            eq(sheets.documentId, sheet.documentId),
+            isNull(sheets.deletedAt),
+            inArray(
+              sheets.id,
+              input.bindings.map((b) => b.allowedSheetId)
+            )
+          )
+        );
+      const validIds = new Set(validSheets.map((s) => s.id));
+      const accepted = input.bindings.filter((b) => validIds.has(b.allowedSheetId));
+      if (accepted.length > 0) {
+        await tx.insert(referenceBindings).values(
+          accepted.map((b) => ({
+            fieldId: field.id,
+            allowedDocumentId: sheet.documentId,
+            allowedSheetId: b.allowedSheetId,
+            allowSelfReference: b.allowSelfReference ?? false
+          }))
+        );
+      }
     }
     await writeAudit(
       {
@@ -446,6 +558,7 @@ export async function updateField(
     options: string[];
     validation: Record<string, unknown>;
     archived: boolean;
+    bindings: { allowedSheetId: string; allowSelfReference?: boolean }[];
   }>
 ) {
   const txId = randomUUID();
@@ -483,6 +596,37 @@ export async function updateField(
             displayOrder: index + 1
           }))
         );
+      }
+    }
+    const isReference = after.type === "single_reference" || after.type === "multi_reference";
+    if (isReference && input.bindings !== undefined) {
+      await tx.delete(referenceBindings).where(eq(referenceBindings.fieldId, fieldId));
+      if (input.bindings.length > 0) {
+        const validSheets = await tx
+          .select({ id: sheets.id })
+          .from(sheets)
+          .where(
+            and(
+              eq(sheets.documentId, sheet.documentId),
+              isNull(sheets.deletedAt),
+              inArray(
+                sheets.id,
+                input.bindings.map((b) => b.allowedSheetId)
+              )
+            )
+          );
+        const validIds = new Set(validSheets.map((s) => s.id));
+        const accepted = input.bindings.filter((b) => validIds.has(b.allowedSheetId));
+        if (accepted.length > 0) {
+          await tx.insert(referenceBindings).values(
+            accepted.map((b) => ({
+              fieldId,
+              allowedDocumentId: sheet.documentId,
+              allowedSheetId: b.allowedSheetId,
+              allowSelfReference: b.allowSelfReference ?? false
+            }))
+          );
+        }
       }
     }
     await writeAudit(
@@ -599,9 +743,18 @@ export async function getSheetGrid(sheetId: string) {
         .where(and(inArray(fieldOptions.fieldId, fieldIds), eq(fieldOptions.archived, false)))
         .orderBy(asc(fieldOptions.displayOrder))
     : [];
+  const bindingRows = fieldIds.length
+    ? await db
+        .select()
+        .from(referenceBindings)
+        .where(inArray(referenceBindings.fieldId, fieldIds))
+    : [];
   const fieldsWithOptions = fieldRows.map((f) => ({
     ...f,
-    options: optionRows.filter((o) => o.fieldId === f.id).map((o) => ({ label: o.label, value: o.value }))
+    options: optionRows.filter((o) => o.fieldId === f.id).map((o) => ({ label: o.label, value: o.value })),
+    bindings: bindingRows
+      .filter((b) => b.fieldId === f.id)
+      .map((b) => ({ allowedSheetId: b.allowedSheetId, allowSelfReference: b.allowSelfReference }))
   }));
 
   if (sheet.sheetKind === "glossary") {
@@ -791,6 +944,60 @@ async function validateReferenceTargets(client: any, sheet: Sheet, field: Field,
     const invalid = targets.some((target: { sheet: Sheet }) => target.sheet.sheetKind === "open_issues");
     if (invalid) throw new Error("OPEN ISSUES references cannot target OPEN ISSUES rows");
   }
+}
+
+export async function listReferenceTargetsForField(fieldId: string) {
+  const [field] = await db.select().from(fields).where(eq(fields.id, fieldId)).limit(1);
+  if (!field) throw new Error("Field not found");
+  const [sheet] = await db.select().from(sheets).where(eq(sheets.id, field.sheetId)).limit(1);
+  if (!sheet) throw new Error("Sheet not found");
+
+  const fieldBindings = await db
+    .select()
+    .from(referenceBindings)
+    .where(eq(referenceBindings.fieldId, fieldId));
+
+  const baseQuery = db
+    .select({
+      rowId: rows.id,
+      visibleId: rows.visibleId,
+      sheetId: sheets.id,
+      sheetName: sheets.name
+    })
+    .from(rows)
+    .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+    .innerJoin(fields, and(eq(fields.sheetId, sheets.id), eq(fields.isIdField, true)));
+
+  if (fieldBindings.length > 0) {
+    const allowedSheetIds = fieldBindings
+      .map((b) => b.allowedSheetId)
+      .filter((id): id is string => Boolean(id));
+    const allowSelf = fieldBindings.some((b) => b.allowSelfReference);
+    if (allowedSheetIds.length === 0) return [];
+    return baseQuery
+      .where(
+        and(
+          eq(sheets.documentId, sheet.documentId),
+          isNull(rows.deletedAt),
+          isNull(sheets.deletedAt),
+          inArray(sheets.id, allowedSheetIds),
+          allowSelf ? sql`true` : sql`${sheets.id} <> ${field.sheetId}`
+        )
+      )
+      .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
+  }
+
+  return baseQuery
+    .where(
+      and(
+        eq(sheets.documentId, sheet.documentId),
+        isNull(rows.deletedAt),
+        isNull(sheets.deletedAt),
+        sql`${sheets.id} <> ${field.sheetId}`,
+        sql`${sheets.sheetKind} <> 'open_issues'`
+      )
+    )
+    .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
 }
 
 export async function listReferenceTargets(sheetId: string) {

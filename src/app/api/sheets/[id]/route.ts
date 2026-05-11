@@ -1,7 +1,7 @@
 import { mapError, ok } from "@/lib/api";
 import { sheetUpdateSchema } from "@/lib/validation";
 import { requireUser } from "@/services/auth";
-import { getSheetGrid, impactAnalysis, updateSheet } from "@/services/repository";
+import { getSheetGrid, impactAnalysis, softDeleteSheet, updateSheet } from "@/services/repository";
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -26,11 +26,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    await requireUser();
+    const user = await requireUser();
     const { id } = await context.params;
     const impact = await impactAnalysis("sheet_delete", id);
     if (impact.blocked) throw new Error(impact.blockers[0]);
-    return ok({ impact, deleted: false, message: "Sheet deletion impact is clear. Soft-delete endpoint is intentionally staged for MVP review." });
+    const sheet = await softDeleteSheet(user, id);
+    return ok({ impact, sheet, deleted: true });
   } catch (error) {
     return mapError(error);
   }

@@ -2,11 +2,19 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import {
+  AuthError,
+  AuthField,
+  AuthInput,
+  AuthPrimaryButton,
+  AuthShell
+} from "./saberx/auth-shell";
+import { PasswordField } from "./saberx/password-field";
 
 export function LoginForm() {
   const router = useRouter();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -29,25 +37,41 @@ export function LoginForm() {
   }
 
   return (
-    <main className="login-shell">
-      <form className="login-panel" onSubmit={submit}>
-        <h1 className="login-title">SaberX</h1>
-        <p className="login-subtitle">Closed engineering repository access</p>
-        <div className="form-stack">
-          <label className="field-label">
-            Username
-            <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
-          </label>
-          <label className="field-label">
-            Password
-            <input className="input" value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" />
-          </label>
-          {error ? <p className="error">{error}</p> : null}
-          <button className="button primary" disabled={pending}>
-            {pending ? "Signing in..." : "Login"}
-          </button>
-        </div>
+    <AuthShell title="Sign in" subtitle="Closed engineering repository access.">
+      <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
+        <AuthField label="Username">
+          <AuthInput
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            autoFocus
+          />
+        </AuthField>
+        <PasswordField
+          label="Password"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+        />
+        {error && <AuthError message={error} />}
+        <AuthPrimaryButton
+          type="submit"
+          pending={pending}
+          pendingLabel="Signing in…"
+        >
+          Sign in
+        </AuthPrimaryButton>
+        <p
+          style={{
+            margin: 0,
+            color: "var(--ink-4)",
+            fontSize: 11.5,
+            textAlign: "center"
+          }}
+        >
+          Access by invitation only. Contact your administrator.
+        </p>
       </form>
-    </main>
+    </AuthShell>
   );
 }

@@ -19,11 +19,11 @@ const ROUTE_LABELS: Record<string, string> = {
   admin: "Administration"
 };
 
-function buildBreadcrumbs(pathname: string, programName: string): string[] {
+function buildBreadcrumbs(pathname: string): string[] {
   const parts = pathname.split("/").filter(Boolean);
-  if (parts.length <= 1) return [programName, "Documents"];
+  if (parts.length <= 1) return ["Documents"];
   const tail = parts.slice(1);
-  const crumbs: string[] = [programName];
+  const crumbs: string[] = [];
   for (const seg of tail) {
     if (ROUTE_LABELS[seg]) crumbs.push(ROUTE_LABELS[seg]);
     else if (seg.length > 14) crumbs.push(seg.slice(0, 8) + "…");
@@ -35,19 +35,19 @@ function buildBreadcrumbs(pathname: string, programName: string): string[] {
 export function Shell({
   children,
   user,
-  programName,
-  integrityCount
+  integrityCount,
+  documents
 }: {
   children: ReactNode;
   user: { name: string; role: string };
-  programName: string;
   integrityCount: number;
+  documents: { id: string; title: string }[];
 }) {
   const { tweaks } = useTweaks();
   const dark = tweaks.theme === "dark";
   const accent = accentVars(tweaks.accent, dark);
   const pathname = usePathname() ?? "/dashboard";
-  const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname, programName), [pathname, programName]);
+  const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -72,7 +72,7 @@ export function Shell({
       }}
     >
       <ToastProvider>
-        <Sidebar user={user} programName={programName} integrityCount={integrityCount} />
+        <Sidebar user={user} integrityCount={integrityCount} documents={documents} />
         <div
           style={{
             flex: 1,

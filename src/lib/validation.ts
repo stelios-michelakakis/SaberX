@@ -63,6 +63,11 @@ export const sheetUpdateSchema = z.object({
   version: z.number().int().positive().optional()
 });
 
+export const referenceBindingSchema = z.object({
+  allowedSheetId: z.string().uuid(),
+  allowSelfReference: z.boolean().default(false)
+});
+
 export const fieldCreateSchema = z.object({
   label: z.string().min(1).max(160),
   type: z.enum(FIELD_TYPES),
@@ -71,7 +76,8 @@ export const fieldCreateSchema = z.object({
   unique: z.boolean().default(false),
   editable: z.boolean().default(true),
   options: z.array(z.string().min(1).max(160)).default([]),
-  validation: z.record(z.unknown()).default({})
+  validation: z.record(z.unknown()).default({}),
+  bindings: z.array(referenceBindingSchema).default([])
 });
 
 export const fieldUpdateSchema = fieldCreateSchema.partial().extend({

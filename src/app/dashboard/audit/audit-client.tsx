@@ -87,7 +87,14 @@ export function AuditClient({
           className="select"
           value={filters.actor}
           onChange={(e) => setFilter("actor", e.target.value)}
-          style={{ height: 30, minHeight: 0, fontSize: 12.5, maxWidth: 200 }}
+          style={{
+            height: 30,
+            minHeight: 0,
+            width: "auto",
+            minWidth: 180,
+            fontSize: 12.5,
+            padding: "4px 28px 4px 10px"
+          }}
         >
           <option value="">All actors</option>
           {actors.map((a) => (
@@ -100,7 +107,14 @@ export function AuditClient({
           className="select"
           value={filters.action}
           onChange={(e) => setFilter("action", e.target.value)}
-          style={{ height: 30, minHeight: 0, fontSize: 12.5, maxWidth: 220 }}
+          style={{
+            height: 30,
+            minHeight: 0,
+            width: "auto",
+            minWidth: 200,
+            fontSize: 12.5,
+            padding: "4px 28px 4px 10px"
+          }}
         >
           <option value="">All actions</option>
           {actions.map((a) => (
@@ -113,7 +127,14 @@ export function AuditClient({
           className="select"
           value={filters.document}
           onChange={(e) => setFilter("document", e.target.value)}
-          style={{ height: 30, minHeight: 0, fontSize: 12.5, maxWidth: 240 }}
+          style={{
+            height: 30,
+            minHeight: 0,
+            width: "auto",
+            minWidth: 220,
+            fontSize: 12.5,
+            padding: "4px 28px 4px 10px"
+          }}
         >
           <option value="">All documents</option>
           {documents.map((d) => (
