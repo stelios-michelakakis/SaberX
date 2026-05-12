@@ -1,6 +1,6 @@
-# SaberX Platform Features
+# EDF SABER Platform Features
 
-SaberX is a database-native engineering document management platform for structured, interdependent workbook-like artifacts such as CONOPS, ICD, and RTM. It replaces separate Excel workbooks with a unified repository designed for traceability, consistency, and controlled schema evolution.
+EDF SABER is a database-native engineering document management platform for structured, interdependent workbook-like artifacts such as CONOPS, ICD, and RTM. It replaces separate Excel workbooks with a unified repository designed for traceability, consistency, and controlled schema evolution.
 
 ## Document Repository
 

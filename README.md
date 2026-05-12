@@ -1,4 +1,4 @@
-# SaberX Engineering Workbook Repository
+# EDF SABER Engineering Workbook Repository
 
 Database-native engineering document repository for workbook-like artifacts such as CONOPS, ICD, and RTM. Excel is treated as an import/export format; PostgreSQL is the system of record.
 

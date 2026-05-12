@@ -102,7 +102,7 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
 export async function exportWorkbook(user: ActorUser, documentId: string) {
   const model = await getDocumentExportModel(documentId);
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "SaberX";
+  workbook.creator = "EDF SABER";
   workbook.created = new Date();
 
   for (const grid of model.sheets) {

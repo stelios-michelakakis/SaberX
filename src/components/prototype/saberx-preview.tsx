@@ -203,9 +203,9 @@ export function SaberXPreview() {
     <div className={styles.shell}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
-          <div className={styles.brandMark}>SX</div>
+          <div className={styles.brandMark}>ES</div>
           <div>
-            <div className={styles.brandName}>SaberX</div>
+            <div className={styles.brandName}>EDF SABER</div>
             <div className={styles.brandSub}>Engineering Docs</div>
           </div>
         </div>

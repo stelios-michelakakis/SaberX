@@ -110,13 +110,13 @@ async function logMcp(
 export function buildMcpServer(user: ApiUser): McpServer {
   const server = new McpServer(
     {
-      name: "saberx",
+      name: "edf-saber",
       version: "0.1.0"
     },
     {
       capabilities: { tools: {} },
       instructions: [
-        "SaberX engineering repository — document, sheet, row, and cell operations.",
+        "EDF SABER engineering repository — document, sheet, row, and cell operations.",
         `Authenticated as user "${user.username}"${user.roles.length ? ` (roles: ${user.roles.join(", ")})` : ""}${user.readOnly ? "; this token is READ-ONLY." : ""}.`,
         "Tools that mutate data write to an immutable audit log and respect role-based authorization.",
         "Reference cells store immutable row UUIDs; use list_reference_targets_for_field to discover valid targets.",

@@ -12,7 +12,7 @@ function unauthorized(message = "Unauthorized") {
     status: 401,
     headers: {
       "content-type": "application/json",
-      "www-authenticate": 'Bearer realm="SaberX", error="invalid_token"'
+      "www-authenticate": 'Bearer realm="EDF SABER", error="invalid_token"'
     }
   });
 }

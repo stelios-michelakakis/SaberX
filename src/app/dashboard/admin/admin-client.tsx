@@ -137,7 +137,7 @@ export function AdminClient() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="user@saberx.gov"
+                placeholder="user@edfsaber.gov"
               />
             </Field>
             <Field label="Username">

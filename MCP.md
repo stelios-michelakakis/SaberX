@@ -1,6 +1,6 @@
-# SaberX MCP Server
+# EDF SABER MCP Server
 
-SaberX exposes a [Model Context Protocol](https://modelcontextprotocol.io) server so
+EDF SABER exposes a [Model Context Protocol](https://modelcontextprotocol.io) server so
 agents can read and mutate the engineering repository the same way a user can
 through the UI. Every action runs as the token's owner, inherits that user's
 role-based permissions, and is recorded in the immutable audit log with a
@@ -57,7 +57,7 @@ Add an entry to `~/Library/Application Support/Claude/claude_desktop_config.json
 }
 ```
 
-Replace the token with one you generated. Restart Claude Desktop and SaberX
+Replace the token with one you generated. Restart Claude Desktop and EDF SABER
 tools will appear in the model's tool list.
 
 ## Connecting `claude` CLI (Claude Code)
