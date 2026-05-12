@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: saberx
-      POSTGRES_USER: saberx
-      POSTGRES_PASSWORD: saberx
+      POSTGRES_DB: edfsaber
+      POSTGRES_USER: edfsaber
+      POSTGRES_PASSWORD: edfsaber
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U saberx -d saberx"]
+      test: ["CMD-SHELL", "pg_isready -U edfsaber -d edfsaber"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -18,7 +18,7 @@ services:
   web:
     build: .
     environment:
-      DATABASE_URL: postgres://saberx:saberx@postgres:5432/saberx
+      DATABASE_URL: postgres://edfsaber:edfsaber@postgres:5432/edfsaber
       APP_ORIGIN: https://localhost
       SESSION_COOKIE_NAME: saberx_session
       INVITATION_SECRET: change-me-before-use
@@ -32,7 +32,7 @@ services:
     build: .
     command: ["npm", "run", "worker"]
     environment:
-      DATABASE_URL: postgres://saberx:saberx@postgres:5432/saberx
+      DATABASE_URL: postgres://edfsaber:edfsaber@postgres:5432/edfsaber
     depends_on:
       postgres:
         condition: service_healthy

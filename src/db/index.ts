@@ -9,7 +9,7 @@ declare global {
   var saberxPool: pg.Pool | undefined;
 }
 
-const connectionString = process.env.DATABASE_URL ?? "postgres://saberx:saberx@localhost:5432/saberx";
+const connectionString = process.env.DATABASE_URL ?? "postgres://edfsaber:edfsaber@localhost:5432/edfsaber";
 
 export const pool =
   globalThis.saberxPool ??

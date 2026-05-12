@@ -25,5 +25,8 @@ uploads
 # Drizzle build cache
 drizzle/.build
 
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
+
 # OS detritus
 Thumbs.db
