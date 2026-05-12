@@ -99,13 +99,14 @@ Full reference, tool list, and `curl` examples in [MCP.md](MCP.md).
 
 ## Production deployment
 
-For anything beyond local development:
+Full recipe for a single Ubuntu VM (with Docker, Caddy auto-TLS, backups, and an ops cheatsheet) lives in **[DEPLOY.md](DEPLOY.md)**. Short version:
 
 - Run behind an HTTPS reverse proxy (the middleware sets HSTS in production mode).
-- Set real values for `APP_ORIGIN`, `DATABASE_URL`, `INVITATION_SECRET`, and `SESSION_COOKIE_NAME` in the deployment environment.
+- Set real values for `APP_ORIGIN`, `POSTGRES_PASSWORD`, `INVITATION_SECRET`, and `SESSION_COOKIE_NAME` in the deployment environment.
+- Use the production override: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` — it pulls every secret from `.env`, takes Postgres off the public port, and binds the web container to `127.0.0.1` only.
 - Don't expose `/api/mcp` without HTTPS — bearer tokens travel in the `Authorization` header.
-- Disable `npm run db:seed` (or use it once on bootstrap) so the trivial default admin doesn't exist.
-- The repository's `docker-compose.yml` is for local development only — its postgres credentials are deliberately weak.
+- Disable `npm run db:seed` (or run it exactly once at bootstrap) so the trivial default admin doesn't exist.
+- The base `docker-compose.yml` is for local development only — its postgres credentials are deliberately weak.
 
 ## License
 
