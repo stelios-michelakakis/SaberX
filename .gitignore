@@ -17,6 +17,7 @@ uploads
 
 # Conventional local overrides
 *.local
+*.local.md
 
 # IDE noise
 .vscode/*.local
