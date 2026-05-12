@@ -8,3 +8,22 @@ coverage
 *.log
 exports
 uploads
+
+# Local Claude Code permissions / settings — may contain bearer tokens,
+# machine-specific paths, and one-off command transcripts. Shared agent
+# definitions (.claude/agents/, .claude/settings.json) remain tracked.
+.claude/settings.local.json
+.claude/.credentials.json
+
+# Conventional local overrides
+*.local
+
+# IDE noise
+.vscode/*.local
+.idea/
+
+# Drizzle build cache
+drizzle/.build
+
+# OS detritus
+Thumbs.db
