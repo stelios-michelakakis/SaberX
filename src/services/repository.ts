@@ -688,47 +688,58 @@ export async function reorderFields(user: ActorUser, sheetId: string, orderedFie
 }
 
 export async function ensureInstructionsReady(user: ActorUser, sheetId: string) {
-  const [sheet] = await db.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
-  if (!sheet || sheet.sheetKind !== "instructions") return null;
-  const existing = await db
-    .select()
-    .from(fields)
-    .where(and(eq(fields.sheetId, sheetId), eq(fields.archived, false)));
-  let bodyField = existing.find((f) => f.slug === "body");
-  if (!bodyField) {
-    const [created] = await db
-      .insert(fields)
-      .values({
-        sheetId,
-        label: "Body",
-        slug: "body",
-        type: "long_text",
-        description: "Document-specific instructions, guidance, or context.",
-        required: false,
-        editable: true,
-        displayOrder: 1,
-        createdBy: user.userId,
-        updatedBy: user.userId
-      })
-      .returning();
-    bodyField = created;
-  }
-  const existingRows = await db
-    .select()
-    .from(rows)
-    .where(and(eq(rows.sheetId, sheetId), isNull(rows.deletedAt)));
-  if (existingRows.length === 0) {
-    await db
-      .insert(rows)
-      .values({
-        sheetId,
-        canonicalOrder: 1,
-        createdBy: user.userId,
-        updatedBy: user.userId
-      })
-      .returning();
-  }
-  return bodyField;
+  // Concurrent calls (e.g. React 19 strict-mode double-effect in dev) used to
+  // race on the unique (sheet_id, slug) constraint when both tried to insert
+  // the Body field. Serialize per-sheet with an advisory lock held for the
+  // life of the transaction.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${sheetId}))`);
+
+    const [sheet] = await tx.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
+    if (!sheet || sheet.sheetKind !== "instructions") return null;
+
+    const existing = await tx
+      .select()
+      .from(fields)
+      .where(and(eq(fields.sheetId, sheetId), eq(fields.archived, false)));
+    let bodyField = existing.find((f) => f.slug === "body");
+    if (!bodyField) {
+      const [created] = await tx
+        .insert(fields)
+        .values({
+          sheetId,
+          label: "Body",
+          slug: "body",
+          type: "long_text",
+          description: "Document-specific instructions, guidance, or context.",
+          required: false,
+          editable: true,
+          displayOrder: 1,
+          createdBy: user.userId,
+          updatedBy: user.userId
+        })
+        .returning();
+      bodyField = created;
+    }
+
+    const existingRows = await tx
+      .select()
+      .from(rows)
+      .where(and(eq(rows.sheetId, sheetId), isNull(rows.deletedAt)));
+    if (existingRows.length === 0) {
+      await tx
+        .insert(rows)
+        .values({
+          sheetId,
+          canonicalOrder: 1,
+          createdBy: user.userId,
+          updatedBy: user.userId
+        })
+        .returning();
+    }
+
+    return bodyField;
+  });
 }
 
 export async function getSheetGrid(sheetId: string) {

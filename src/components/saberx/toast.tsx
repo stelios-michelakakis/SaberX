@@ -26,6 +26,8 @@ export type Toast = {
   detail?: string;
   action?: ToastAction;
   durationMs?: number;
+  /** When true, render a spinning icon (useful for in-progress operations). */
+  loading?: boolean;
 };
 
 type Ctx = {
@@ -174,7 +176,12 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         color: "var(--ink)"
       }}
     >
-      <Icon name={a.icon} size={14} style={{ color: a.color, marginTop: 2 }} />
+      <Icon
+        name={toast.loading ? "spinner" : a.icon}
+        size={14}
+        className={toast.loading ? "spin" : undefined}
+        style={{ color: a.color, marginTop: 2 }}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 500, color: "var(--ink)" }}>{toast.message}</div>
         {toast.detail && (

@@ -86,33 +86,38 @@ export function DocumentClient({
   };
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
 
     const activeSheet = sheets.find((s) => s.id === activeSheetId);
     const isInstructions = activeSheet?.sheetKind === "instructions";
-    const url = `/api/sheets/${activeSheetId}`;
-    const initialFetch = isInstructions
-      ? fetch(`/api/sheets/${activeSheetId}/instructions-ready`, { method: "POST" })
-      : fetch(url);
+    const url = isInstructions
+      ? `/api/sheets/${activeSheetId}/instructions-ready`
+      : `/api/sheets/${activeSheetId}`;
+    const init: RequestInit = {
+      signal: controller.signal,
+      ...(isInstructions ? { method: "POST" } : {})
+    };
 
-    initialFetch
+    fetch(url, init)
       .then(async (r) => {
         if (!r.ok) throw new Error(`Failed to load sheet (${r.status})`);
         const json = (await r.json()) as GridResponse;
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setGrid(json);
         setSelectedRow(json.rows[0]?.id ?? null);
       })
       .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
+        if (e.name === "AbortError") return;
+        if (!controller.signal.aborted) setError(e.message);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
+
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [activeSheetId, sheets]);
 

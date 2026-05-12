@@ -67,17 +67,28 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
 
   const onImport = async (file: File) => {
     setImporting(true);
+    const sizeKb = Math.max(1, Math.round(file.size / 1024));
+    const sizeLabel = sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+    const progressId = toast.info(`Importing ${file.name}…`, {
+      detail: `${sizeLabel} — uploading and parsing on the server`,
+      durationMs: 0,
+      loading: true
+    });
     try {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/import-jobs", { method: "POST", body: fd });
+      toast.dismiss(progressId);
       if (!res.ok) {
         const text = await res.text();
         toast.error("Import failed", { detail: text.slice(0, 200) });
         return;
       }
-      toast.success("Workbook imported");
+      toast.success(`Imported ${file.name}`);
       router.refresh();
+    } catch (err) {
+      toast.dismiss(progressId);
+      toast.error("Import failed", { detail: (err as Error).message });
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -240,7 +251,11 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
           disabled={importing}
           type="button"
         >
-          <Icon name="upload" size={12} />
+          {importing ? (
+            <Icon name="spinner" size={12} className="spin" />
+          ) : (
+            <Icon name="upload" size={12} />
+          )}
           {importing ? "Importing…" : "Import"}
         </button>
         <button className="sx-btn sx-btn-primary sx-btn-sm" onClick={onNewDocument} type="button">

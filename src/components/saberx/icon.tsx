@@ -71,7 +71,8 @@ const ICONS: Record<string, string> = {
   warning: "M8 1.5 14.5 13H1.5L8 1.5Z M8 6v3.5 M8 11.5h.01",
   question: "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Z M6 6.5a2 2 0 0 1 4 0c0 1.5-2 1.5-2 3 M8 11.5h.01",
   flask: "M6 1.5h4 M6.5 1.5v5L3 13a1 1 0 0 0 .9 1.5h8.2A1 1 0 0 0 13 13L9.5 6.5v-5",
-  logout: "M10 2H3v12h7 M6 8h7 M10 5l3 3-3 3"
+  logout: "M10 2H3v12h7 M6 8h7 M10 5l3 3-3 3",
+  spinner: "M14 8a6 6 0 1 1-6-6"
 };
 
 export type IconName = keyof typeof ICONS;
