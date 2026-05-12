@@ -43,7 +43,7 @@ Add an entry to `~/Library/Application Support/Claude/claude_desktop_config.json
 ```json
 {
   "mcpServers": {
-    "saberx": {
+    "edf-saber": {
       "command": "npx",
       "args": [
         "-y",
@@ -63,7 +63,7 @@ tools will appear in the model's tool list.
 ## Connecting `claude` CLI (Claude Code)
 
 ```
-claude mcp add saberx --transport http http://localhost:3000/api/mcp \
+claude mcp add edf-saber --transport http http://localhost:3000/api/mcp \
   --header "Authorization: Bearer sbx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
