@@ -1,0 +1,40 @@
+# Production override for docker-compose.yml.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# All secret values are read from a .env file next to this compose file.
+# See DEPLOY.md for the full deployment recipe.
+#
+# Requires Docker Compose v2.24+ for !reset / !override tags.
+
+services:
+  postgres:
+    # Drop the public 5432 mapping — Postgres should only be reachable from
+    # the web/worker containers on the docker network.
+    ports: !reset []
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+    restart: unless-stopped
+
+  web:
+    # Bind to loopback only — the TLS-terminating reverse proxy (Caddy/Nginx)
+    # on the same host bridges to this port.
+    ports: !override
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      APP_ORIGIN: ${APP_ORIGIN}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-edfsaber_session}
+      INVITATION_SECRET: ${INVITATION_SECRET}
+      NODE_ENV: production
+    restart: unless-stopped
+
+  worker:
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      NODE_ENV: production
+    restart: unless-stopped

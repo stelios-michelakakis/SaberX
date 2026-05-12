@@ -1,0 +1,39 @@
+# Caddy reverse-proxy config for EDF SABER.
+# Drop this at /etc/caddy/Caddyfile (replace the placeholder below),
+# then: sudo systemctl reload caddy
+#
+# Caddy auto-provisions TLS via Let's Encrypt as long as port 80 and 443
+# are reachable on the public internet and the DNS A/AAAA record for
+# YOUR_DOMAIN points at this VM.
+
+YOUR_DOMAIN {
+    # Strong defaults
+    encode zstd gzip
+    header {
+        # Belt-and-suspenders alongside the app's own HSTS middleware.
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        # Caddy adds its own version header by default; hide it.
+        -Server
+    }
+
+    # Forward to the Next.js app on localhost.
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+    }
+
+    # Cap upload size for the Excel import endpoint (~50 MB).
+    request_body {
+        max_size 50MB
+    }
+
+    log {
+        output file /var/log/caddy/edfsaber.access.log {
+            roll_size 50mb
+            roll_keep 7
+        }
+        format json
+    }
+}
