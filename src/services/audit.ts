@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { auditEvents } from "@/db/schema";
 import { db } from "@/db";
@@ -8,6 +9,16 @@ export type AuditActor = {
   id: string | null;
   username: string;
 };
+
+export type AuditSourceType =
+  | "UI"
+  | "import"
+  | "export"
+  | "system"
+  | "integrity"
+  | "renumbering"
+  | "security"
+  | "mcp";
 
 export type AuditInput = {
   transactionId?: string;
@@ -26,10 +37,22 @@ export type AuditInput = {
   before?: unknown;
   after?: unknown;
   summary: string;
-  sourceType?: "UI" | "import" | "export" | "system" | "integrity" | "renumbering" | "security";
+  sourceType?: AuditSourceType;
   success?: boolean;
   requestMeta?: Record<string, unknown>;
 };
+
+type AuditContext = { sourceType: AuditSourceType };
+
+const auditContext = new AsyncLocalStorage<AuditContext>();
+
+// Lets request entry points (e.g. the MCP HTTP handler) tag every nested
+// writeAudit call with a sourceType without threading it through every
+// repository function. writeAudit prefers an explicit input.sourceType,
+// falls back to the surrounding context, and finally defaults to "UI".
+export function withAuditContext<T>(ctx: AuditContext, fn: () => Promise<T>): Promise<T> {
+  return auditContext.run(ctx, fn);
+}
 
 export async function writeAudit(input: AuditInput, client: any = db) {
   const transactionId = input.transactionId ?? randomUUID();
@@ -52,7 +75,7 @@ export async function writeAudit(input: AuditInput, client: any = db) {
     afterJson: input.after ?? null,
     diffJson: jsonDiff(input.before, input.after),
     summaryText: input.summary,
-    sourceType: input.sourceType ?? "UI",
+    sourceType: input.sourceType ?? auditContext.getStore()?.sourceType ?? "UI",
     success: input.success ?? true,
     requestMeta: input.requestMeta ?? {}
   });

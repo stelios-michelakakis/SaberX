@@ -105,8 +105,10 @@ export function Cell(props: CellProps) {
         cursor: "text",
         color: "var(--ink-2)"
       }}
-      onClick={(e) => {
-        e.stopPropagation();
+      onClick={() => {
+        // Don't stop propagation — let the click bubble up to the <tr> so the
+        // row gets focused (Inspector follows selectedRow) in addition to
+        // entering edit mode on this cell.
         setEditing(true);
       }}
       title="Click to edit"
