@@ -33,18 +33,24 @@ function actor(user: ActorUser): AuditActor {
   return { id: user.userId, username: user.username };
 }
 
-function normalizeFieldValue(field: Field, value: unknown) {
+const URL_ALLOWED_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:", "ftp:"]);
+const BOOLEAN_TRUE = new Set(["true", "yes", "1", "on"]);
+const BOOLEAN_FALSE = new Set(["false", "no", "0", "off"]);
+
+const EMPTY_NORMALIZED = {
+  valueText: null,
+  valueNumber: null,
+  valueBoolean: null,
+  valueDate: null,
+  valueDateTime: null,
+  valueJson: null,
+  normalizedText: "",
+  displayText: ""
+} as const;
+
+function normalizeFieldValue(field: Field, value: unknown, allowedOptions: string[] = []) {
   if (value === null || value === undefined || value === "") {
-    return {
-      valueText: null,
-      valueNumber: null,
-      valueBoolean: null,
-      valueDate: null,
-      valueDateTime: null,
-      valueJson: null,
-      normalizedText: "",
-      displayText: ""
-    };
+    return { ...EMPTY_NORMALIZED };
   }
 
   switch (field.type as FieldType) {
@@ -59,7 +65,15 @@ function normalizeFieldValue(field: Field, value: unknown) {
       return { valueNumber: String(numberValue), valueText: null, valueBoolean: null, valueDate: null, valueDateTime: null, valueJson: null, normalizedText: String(numberValue), displayText: String(numberValue) };
     }
     case "boolean": {
-      const bool = typeof value === "boolean" ? value : ["true", "yes", "1", "on"].includes(String(value).toLowerCase());
+      let bool: boolean;
+      if (typeof value === "boolean") {
+        bool = value;
+      } else {
+        const lower = String(value).trim().toLowerCase();
+        if (BOOLEAN_TRUE.has(lower)) bool = true;
+        else if (BOOLEAN_FALSE.has(lower)) bool = false;
+        else throw new Error(`${field.label} must be a boolean (true/false)`);
+      }
       return { valueBoolean: bool, valueText: null, valueNumber: null, valueDate: null, valueDateTime: null, valueJson: null, normalizedText: String(bool), displayText: bool ? "Yes" : "No" };
     }
     case "date": {
@@ -72,7 +86,41 @@ function normalizeFieldValue(field: Field, value: unknown) {
       if (Number.isNaN(parsed.getTime())) throw new Error(`${field.label} must be a date/time`);
       return { valueDateTime: parsed, valueDate: null, valueText: null, valueNumber: null, valueBoolean: null, valueJson: null, normalizedText: parsed.toISOString(), displayText: parsed.toISOString() };
     }
-    case "multi_enum":
+    case "url": {
+      const text = String(value).trim();
+      let parsed: URL;
+      try {
+        parsed = new URL(text);
+      } catch {
+        throw new Error(`${field.label} must be a valid URL`);
+      }
+      if (!URL_ALLOWED_SCHEMES.has(parsed.protocol)) {
+        throw new Error(`${field.label} URL scheme "${parsed.protocol}" is not allowed`);
+      }
+      return { valueText: text, valueNumber: null, valueBoolean: null, valueDate: null, valueDateTime: null, valueJson: null, normalizedText: text.toLowerCase(), displayText: text };
+    }
+    case "single_enum":
+    case "status": {
+      const text = String(value);
+      if (allowedOptions.length === 0) {
+        throw new Error(`${field.label} has no options defined`);
+      }
+      if (!allowedOptions.includes(text)) {
+        throw new Error(`${field.label} value "${text}" is not one of: ${allowedOptions.join(", ")}`);
+      }
+      return { valueText: text, valueNumber: null, valueBoolean: null, valueDate: null, valueDateTime: null, valueJson: null, normalizedText: text.toLowerCase(), displayText: text };
+    }
+    case "multi_enum": {
+      const values = Array.isArray(value) ? value.map(String) : String(value).split(",").map((item) => item.trim()).filter(Boolean);
+      if (allowedOptions.length === 0) {
+        throw new Error(`${field.label} has no options defined`);
+      }
+      const invalid = values.filter((v) => !allowedOptions.includes(v));
+      if (invalid.length) {
+        throw new Error(`${field.label} value(s) ${invalid.map((v) => `"${v}"`).join(", ")} not in option list`);
+      }
+      return { valueJson: values, valueText: null, valueNumber: null, valueBoolean: null, valueDate: null, valueDateTime: null, normalizedText: values.join(" "), displayText: values.join(", ") };
+    }
     case "tag_list": {
       const values = Array.isArray(value) ? value.map(String) : String(value).split(",").map((item) => item.trim()).filter(Boolean);
       return { valueJson: values, valueText: null, valueNumber: null, valueBoolean: null, valueDate: null, valueDateTime: null, normalizedText: values.join(" "), displayText: values.join(", ") };
@@ -87,6 +135,17 @@ function normalizeFieldValue(field: Field, value: unknown) {
       return { valueText: text, valueNumber: null, valueBoolean: null, valueDate: null, valueDateTime: null, valueJson: null, normalizedText: text.toLowerCase(), displayText: text };
     }
   }
+}
+
+async function loadFieldOptionsIfEnum(client: any, field: Field): Promise<string[]> {
+  if (field.type !== "single_enum" && field.type !== "multi_enum" && field.type !== "status") {
+    return [];
+  }
+  const optionRows = await client
+    .select({ value: fieldOptions.value })
+    .from(fieldOptions)
+    .where(and(eq(fieldOptions.fieldId, field.id), eq(fieldOptions.archived, false)));
+  return optionRows.map((r: { value: string }) => r.value);
 }
 
 async function nextDisplayOrder(documentId: string, client: any) {
@@ -573,7 +632,9 @@ export async function updateField(
       .update(fields)
       .set({
         label: input.label ?? before.label,
-        slug: input.label ? slugify(input.label) : before.slug,
+        // Slug is immutable after creation — renaming the label does not
+        // regenerate the slug, since clients may address cells by slug.
+        slug: before.slug,
         description: input.description ?? before.description,
         required: input.required ?? before.required,
         unique: input.unique ?? before.unique,
@@ -822,13 +883,40 @@ export async function createRow(user: ActorUser, sheetId: string, input: { cells
     const [sheet] = await tx.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
     if (!sheet || sheet.deletedAt) throw new Error("Sheet not found");
     if (sheet.sheetKind === "glossary" || sheet.sheetKind === "instructions") throw new Error("Rows cannot be added to this reserved sheet");
+
+    const cellsInput = input.cells ?? {};
+    // Required-field enforcement applies to atomic creates (callers that pass
+    // cells up front, e.g. MCP). The UI creates a stub row then fills cells
+    // incrementally, so we skip the check when no cells were provided.
+    if (Object.keys(cellsInput).length > 0) {
+      const sheetFields: Field[] = await tx
+        .select()
+        .from(fields)
+        .where(and(eq(fields.sheetId, sheetId), eq(fields.archived, false)));
+      const isMeaningful = (v: unknown) =>
+        v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0);
+      const missingRequired = sheetFields.filter((f) => {
+        if (!f.required || f.isIdField || f.type === "auto_id") return false;
+        const provided =
+          Object.prototype.hasOwnProperty.call(cellsInput, f.id) ||
+          Object.prototype.hasOwnProperty.call(cellsInput, f.slug);
+        if (!provided) return true;
+        const value =
+          (cellsInput as Record<string, unknown>)[f.id] ?? (cellsInput as Record<string, unknown>)[f.slug];
+        return !isMeaningful(value);
+      });
+      if (missingRequired.length) {
+        throw new Error(`Missing required field(s): ${missingRequired.map((f) => f.label).join(", ")}`);
+      }
+    }
+
     const order = await nextRowOrder(sheetId, tx);
     const rowVisibleId = await computeVisibleId(sheetId, order, tx);
     const [row] = await tx
       .insert(rows)
       .values({ sheetId, canonicalOrder: order, visibleId: rowVisibleId, createdBy: user.userId, updatedBy: user.userId })
       .returning();
-    await applyCellPatchSet(tx, user, row, input.cells ?? {});
+    await applyCellPatchSet(tx, user, row, cellsInput);
     await writeAudit(
       {
         transactionId: txId,
@@ -910,7 +998,8 @@ async function patchCellInternal(client: any, user: ActorUser, row: Row, field: 
     return after;
   }
 
-  const normalized = normalizeFieldValue(field, value);
+  const allowedOptions = await loadFieldOptionsIfEnum(client, field);
+  const normalized = normalizeFieldValue(field, value, allowedOptions);
   const [before] = await client.select().from(cellValuesScalar).where(and(eq(cellValuesScalar.rowId, row.id), eq(cellValuesScalar.fieldId, field.id))).limit(1);
   const [after] = await client
     .insert(cellValuesScalar)
@@ -951,6 +1040,32 @@ async function validateReferenceTargets(client: any, sheet: Sheet, field: Field,
     .innerJoin(sheets, eq(sheets.id, rows.sheetId))
     .where(and(inArray(rows.id, targetIds), isNull(rows.deletedAt), eq(sheets.documentId, sheet.documentId)));
   if (targets.length !== targetIds.length) throw new Error("One or more references are invalid");
+
+  // Honor per-field binding restrictions: when bindings exist, only target rows
+  // in an allowed sheet are permitted; self-reference is gated by allow_self_reference.
+  const bindings = await client
+    .select()
+    .from(referenceBindings)
+    .where(eq(referenceBindings.fieldId, field.id));
+  if (bindings.length > 0) {
+    const allowedSheetIds = new Set(
+      bindings
+        .map((b: { allowedSheetId: string | null }) => b.allowedSheetId)
+        .filter((id: string | null): id is string => Boolean(id))
+    );
+    const allowSelf = bindings.some((b: { allowSelfReference: boolean }) => b.allowSelfReference);
+    for (const target of targets as { row: Row; sheet: Sheet }[]) {
+      if (!allowedSheetIds.has(target.sheet.id)) {
+        throw new Error(
+          `${field.label} cannot reference ${target.row.visibleId ?? target.row.id}: target sheet "${target.sheet.name}" is not in the binding allowlist`
+        );
+      }
+      if (!allowSelf && target.sheet.id === field.sheetId) {
+        throw new Error(`${field.label} cannot reference rows in its own sheet`);
+      }
+    }
+  }
+
   if (sourceSheet?.sheetKind === "open_issues") {
     const invalid = targets.some((target: { sheet: Sheet }) => target.sheet.sheetKind === "open_issues");
     if (invalid) throw new Error("OPEN ISSUES references cannot target OPEN ISSUES rows");

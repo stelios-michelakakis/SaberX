@@ -31,3 +31,4 @@ tsconfig.tsbuildinfo
 
 # OS detritus
 Thumbs.db
+vm-setup.local.md

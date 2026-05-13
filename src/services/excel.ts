@@ -59,13 +59,33 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
       if (rowNumber > 1) dataRows.push(Array.isArray(row.values) ? row.values.slice(1) : []);
     });
 
+    // Resolve a unique (label, slug) per data column up front. Headers that
+    // collide get a "(2)", "(3)", ... suffix so slugify() produces unique
+    // slugs and the (sheet_id, slug) unique index isn't violated.
+    const usedSlugs = new Set<string>(["id"]);
+    const resolvedColumns: { label: string; slug: string; columnIndex: number }[] = [];
     for (const [columnIndex, header] of headers.entries()) {
-      if (slugify(header) === "id" || /_?id$/i.test(header)) continue;
-      const samples = dataRows.map((row) => row[columnIndex]);
+      if (/_?id$/i.test(header)) continue;
+      const baseSlug = slugify(header);
+      if (!baseSlug || baseSlug === "id") continue; // unmappable header
+      let slug = baseSlug;
+      let label = header;
+      let suffix = 2;
+      while (usedSlugs.has(slug)) {
+        label = `${header} (${suffix})`;
+        slug = slugify(label);
+        suffix += 1;
+      }
+      usedSlugs.add(slug);
+      resolvedColumns.push({ label, slug, columnIndex });
+    }
+
+    for (const column of resolvedColumns) {
+      const samples = dataRows.map((row) => row[column.columnIndex]);
       await createField(user, sheet.id, {
-        label: header,
+        label: column.label,
         type: inferFieldType(samples),
-        description: `Imported field ${header}`,
+        description: `Imported field ${column.label}`,
         required: false,
         unique: false,
         editable: true
@@ -75,9 +95,9 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
     const sheetFields = await db.select().from(fields).where(eq(fields.sheetId, sheet.id));
     for (const row of dataRows) {
       const cells: Record<string, unknown> = {};
-      for (const [columnIndex, header] of headers.entries()) {
-        const field = sheetFields.find((item) => item.slug === slugify(header));
-        if (field && field.type !== "auto_id") cells[field.id] = row[columnIndex] ?? "";
+      for (const column of resolvedColumns) {
+        const field = sheetFields.find((item) => item.slug === column.slug);
+        if (field && field.type !== "auto_id") cells[field.id] = row[column.columnIndex] ?? "";
       }
       await createRow(user, sheet.id, { cells });
       rowCount += 1;

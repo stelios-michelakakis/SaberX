@@ -1,5 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { authenticateApiToken } from "@/services/api-tokens";
+import { withAuditContext } from "@/services/audit";
 import { buildMcpServer } from "@/mcp/server";
 
 // MCP HTTP transport requires runtime features (streaming, async, crypto).
@@ -39,7 +40,7 @@ async function handle(request: Request) {
   await server.connect(transport);
 
   try {
-    return await transport.handleRequest(request);
+    return await withAuditContext({ sourceType: "mcp" }, () => transport.handleRequest(request));
   } catch (error) {
     return new Response(
       JSON.stringify({
