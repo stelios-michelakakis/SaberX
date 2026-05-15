@@ -630,7 +630,8 @@ select:focus-visible,
 
 code {
   font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: #eef3f9;
+  background: var(--bg-3);
+  color: var(--ink);
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 2px 5px;
