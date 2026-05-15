@@ -7,6 +7,7 @@ import { Icon } from "./icon";
 import { useTweaks } from "./theme-provider";
 import { useToast } from "./toast";
 import { TweaksPanelTrigger } from "./tweaks-panel";
+import { HelpMenu } from "./help-menu";
 
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) return false;
@@ -15,7 +16,13 @@ const isEditableTarget = (target: EventTarget | null) => {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 };
 
-export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
+export function Topbar({
+  breadcrumbs,
+  firstDocumentId
+}: {
+  breadcrumbs: string[];
+  firstDocumentId?: string;
+}) {
   const router = useRouter();
   const { tweaks, toggle } = useTweaks();
   const toast = useToast();
@@ -165,6 +172,7 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
 
       <Link
         href="/dashboard/search"
+        data-tour="topbar-search"
         style={{
           display: "flex",
           alignItems: "center",
@@ -212,8 +220,9 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
         }}
       />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <div data-tour="topbar-tools" style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <button
+          data-tour="topbar-undo"
           className="sx-btn sx-btn-ghost sx-btn-sm"
           onClick={runUndo}
           disabled={undoing}
@@ -234,6 +243,7 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
           <Icon name={tweaks.theme === "dark" ? "sun" : "moon"} />
         </button>
         <TweaksPanelTrigger />
+        <HelpMenu firstDocumentId={firstDocumentId} />
         <div style={{ width: 1, height: 18, background: "var(--line)", margin: "0 4px" }} />
         <input
           ref={fileRef}
@@ -250,6 +260,7 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
           onClick={() => fileRef.current?.click()}
           disabled={importing}
           type="button"
+          data-tour="topbar-import"
         >
           {importing ? (
             <Icon name="spinner" size={12} className="spin" />
@@ -258,7 +269,12 @@ export function Topbar({ breadcrumbs }: { breadcrumbs: string[] }) {
           )}
           {importing ? "Importing…" : "Import"}
         </button>
-        <button className="sx-btn sx-btn-primary sx-btn-sm" onClick={onNewDocument} type="button">
+        <button
+          className="sx-btn sx-btn-primary sx-btn-sm"
+          onClick={onNewDocument}
+          type="button"
+          data-tour="topbar-new-doc"
+        >
           <Icon name="plus" size={12} />
           New document
         </button>

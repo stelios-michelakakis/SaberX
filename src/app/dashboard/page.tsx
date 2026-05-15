@@ -67,6 +67,7 @@ export default async function RepositoryPage() {
 
       <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
         <div
+          data-tour="documents-table"
           style={{
             border: "1px solid var(--line)",
             borderRadius: "var(--sx-radius-lg)",
