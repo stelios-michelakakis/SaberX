@@ -36,12 +36,14 @@ export function Shell({
   children,
   user,
   integrityCount,
-  documents
+  documents,
+  tutorialCompleted
 }: {
   children: ReactNode;
   user: { name: string; role: string };
   integrityCount: number;
   documents: { id: string; title: string }[];
+  tutorialCompleted: boolean;
 }) {
   const { tweaks } = useTweaks();
   const dark = tweaks.theme === "dark";
@@ -82,7 +84,11 @@ export function Shell({
             overflow: "hidden"
           }}
         >
-          <Topbar breadcrumbs={breadcrumbs} firstDocumentId={documents[0]?.id} />
+          <Topbar
+            breadcrumbs={breadcrumbs}
+            firstDocumentId={documents[0]?.id}
+            tutorialCompleted={tutorialCompleted}
+          />
           <div
             style={{
               flex: 1,

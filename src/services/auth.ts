@@ -35,6 +35,7 @@ export async function getSessionUser() {
       organization: users.organization,
       accountStatus: users.accountStatus,
       mustChangePassword: users.mustChangePassword,
+      tutorialCompletedAt: users.tutorialCompletedAt,
       expiresAt: sessions.expiresAt,
       revokedAt: sessions.revokedAt
     })

@@ -39,6 +39,7 @@ export const users = pgTable(
     organization: varchar("organization", { length: 180 }),
     accountStatus: varchar("account_status", { length: 40 }).notNull().default("pending_activation"),
     mustChangePassword: boolean("must_change_password").notNull().default(false),
+    tutorialCompletedAt: timestamp("tutorial_completed_at", { withTimezone: true }),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdBy: uuid("created_by"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
