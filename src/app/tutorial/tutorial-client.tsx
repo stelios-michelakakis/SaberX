@@ -330,12 +330,23 @@ function TutorialInner({ userName, userRole }: { userName: string; userRole: str
     async (skip: boolean) => {
       // Mark the tutorial complete on the user record before navigating so
       // the dashboard sees the updated flag and doesn't bounce us back here.
+      let persisted = false;
       try {
-        await fetch("/api/me/tutorial", { method: "POST" });
-      } catch {
-        /* navigate anyway — worst case the user sees the tour once more */
+        const r = await fetch("/api/me/tutorial", { method: "POST" });
+        persisted = r.ok;
+        if (!r.ok) {
+          // eslint-disable-next-line no-console
+          console.error("POST /api/me/tutorial failed", r.status, await r.text().catch(() => ""));
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("POST /api/me/tutorial threw", err);
       }
+      // Invalidate the router cache so the dashboard layout re-fetches the
+      // session user and picks up the new tutorial_completed_at value.
+      router.refresh();
       router.push(skip ? "/dashboard" : "/dashboard/profile");
+      void persisted;
     },
     [router]
   );
