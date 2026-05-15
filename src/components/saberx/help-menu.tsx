@@ -6,10 +6,10 @@ import { Icon } from "./icon";
 
 export function HelpMenu({
   firstDocumentId: _firstDocumentId,
-  tutorialCompleted
+  tutorialSeen
 }: {
   firstDocumentId?: string;
-  tutorialCompleted: boolean;
+  tutorialSeen: boolean;
 }) {
   void _firstDocumentId;
   const router = useRouter();
@@ -22,8 +22,8 @@ export function HelpMenu({
   // route on finish/skip) so it survives across browsers and sessions.
   useEffect(() => {
     if (pathname.startsWith("/tutorial")) return;
-    if (!tutorialCompleted) router.push("/tutorial");
-  }, [router, pathname, tutorialCompleted]);
+    if (!tutorialSeen) router.push("/tutorial");
+  }, [router, pathname, tutorialSeen]);
 
   return (
     <>
