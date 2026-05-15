@@ -4,28 +4,26 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Icon } from "./icon";
 
-const STORAGE_KEY = "saberx.tutorialSeen.v1";
-
-export function HelpMenu({ firstDocumentId: _firstDocumentId }: { firstDocumentId?: string }) {
+export function HelpMenu({
+  firstDocumentId: _firstDocumentId,
+  tutorialCompleted
+}: {
+  firstDocumentId?: string;
+  tutorialCompleted: boolean;
+}) {
   void _firstDocumentId;
   const router = useRouter();
   const pathname = usePathname() ?? "";
   const [open, setOpen] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
 
-  // First-time landing: redirect to the standalone /tutorial sandbox instead
-  // of opening an in-place overlay. The /tutorial page sets the seen flag
-  // itself on finish/skip so we only redirect once.
+  // First-time landing: redirect to /tutorial only if the user has never
+  // completed it. The flag lives on the user record (set by the tutorial
+  // route on finish/skip) so it survives across browsers and sessions.
   useEffect(() => {
-    if (typeof window === "undefined") return;
     if (pathname.startsWith("/tutorial")) return;
-    try {
-      const seen = window.localStorage.getItem(STORAGE_KEY);
-      if (!seen) router.push("/tutorial");
-    } catch {
-      /* ignore */
-    }
-  }, [router, pathname]);
+    if (!tutorialCompleted) router.push("/tutorial");
+  }, [router, pathname, tutorialCompleted]);
 
   return (
     <>

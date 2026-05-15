@@ -32,6 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         user={{ name: fullName, role: user.organization || "Member" }}
         integrityCount={issues.length}
         documents={docList}
+        tutorialCompleted={Boolean(user.tutorialCompletedAt)}
       >
         {children}
       </Shell>

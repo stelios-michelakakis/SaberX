@@ -16,8 +16,6 @@ import { PageHeader } from "@/components/saberx/page-header";
 import { Avatar } from "@/components/saberx/avatar";
 import { ThemeProvider, accentVars, useTweaks } from "@/components/saberx/theme-provider";
 
-const STORAGE_KEY = "saberx.tutorialSeen.v1";
-
 /* ============================================================
    Mock data — entirely client-side; nothing touches the DB.
    ============================================================ */
@@ -328,17 +326,15 @@ function TutorialInner({ userName, userRole }: { userName: string; userRole: str
   const step = STEPS[stepIdx];
   const last = STEPS.length - 1;
 
-  const markSeen = () => {
-    try {
-      localStorage.setItem(STORAGE_KEY, new Date().toISOString());
-    } catch {
-      /* ignore */
-    }
-  };
-
   const exit = useCallback(
-    (skip: boolean) => {
-      markSeen();
+    async (skip: boolean) => {
+      // Mark the tutorial complete on the user record before navigating so
+      // the dashboard sees the updated flag and doesn't bounce us back here.
+      try {
+        await fetch("/api/me/tutorial", { method: "POST" });
+      } catch {
+        /* navigate anyway — worst case the user sees the tour once more */
+      }
       router.push(skip ? "/dashboard" : "/dashboard/profile");
     },
     [router]

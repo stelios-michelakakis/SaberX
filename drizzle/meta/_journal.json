@@ -15,6 +15,13 @@
       "when": 1778501381193,
       "tag": "0001_young_gladiator",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778845437576,
+      "tag": "0002_productive_kat_farrell",
+      "breakpoints": true
     }
   ]
 }
