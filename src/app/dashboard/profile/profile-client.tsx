@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Avatar } from "@/components/saberx/avatar";
 import { Icon } from "@/components/saberx/icon";
 import { useToast } from "@/components/saberx/toast";
@@ -245,6 +245,7 @@ function ApiTokensSection() {
   const [readOnly, setReadOnly] = useState(false);
   const [revealedToken, setRevealedToken] = useState<{ token: string; name: string } | null>(null);
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
+  const [setupHelpOpen, setSetupHelpOpen] = useState(false);
 
   const tokensQuery = useQuery({
     queryKey: ["api-tokens"],
@@ -301,12 +302,33 @@ function ApiTokensSection() {
         padding: 18
       }}
     >
-      <SectionTitle icon="key" title="API tokens for agents (MCP)" />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 12
+        }}
+      >
+        <Icon name="key" size={12} style={{ color: "var(--ink-3)" }} />
+        <strong style={{ fontSize: 13 }}>API tokens for agents (MCP)</strong>
+        <button
+          type="button"
+          className="sx-btn sx-btn-ghost sx-btn-sm"
+          onClick={() => setSetupHelpOpen(true)}
+          style={{ padding: 4 }}
+          aria-label="How to set up MCP"
+          title="How to set up MCP"
+        >
+          <Icon name="question" size={12} />
+        </button>
+      </div>
       <p style={{ margin: "0 0 14px", color: "var(--ink-3)", fontSize: 12.5, lineHeight: 1.55 }}>
         Tokens authenticate agents calling the MCP endpoint at <span className="mono">/api/mcp</span>
         . They inherit your role and account permissions, and every action is recorded in the audit
         log. Treat each token like a password.
       </p>
+      {setupHelpOpen && <McpSetupModal onClose={() => setSetupHelpOpen(false)} /> }
 
       <div
         style={{
@@ -582,5 +604,262 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+function McpSetupModal({ onClose }: { onClose: () => void }) {
+  const toast = useToast();
+  // The modal only mounts after a user click, well past hydration — so
+  // window is always defined here and the deployed origin is correct.
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const endpoint = `${origin}/api/mcp`;
+  const claudeDesktopJson = `{
+  "mcpServers": {
+    "edf-saber": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "${endpoint}",
+        "--header",
+        "Authorization: Bearer <YOUR_TOKEN>"
+      ]
+    }
+  }
+}`;
+  const claudeCliCmd = `claude mcp add edf-saber --transport http ${endpoint} \\
+  --header "Authorization: Bearer <YOUR_TOKEN>"`;
+
+  const copy = (text: string, label: string) => {
+    navigator.clipboard?.writeText(text).then(
+      () => toast.success(`${label} copied`),
+      () => toast.error("Copy failed")
+    );
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="MCP setup"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(8,10,14,0.55)",
+        zIndex: 200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(720px, 100%)",
+          maxHeight: "90dvh",
+          background: "var(--panel)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--sx-radius-lg)",
+          boxShadow: "var(--sx-shadow-lg)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden"
+        }}
+      >
+        <div
+          style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid var(--line)",
+            display: "flex",
+            alignItems: "center"
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                color: "var(--ink-4)",
+                textTransform: "uppercase"
+              }}
+            >
+              Setup
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
+              Connect an agent via MCP
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="sx-btn sx-btn-ghost sx-btn-sm"
+            aria-label="Close"
+            style={{ padding: 6 }}
+          >
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: 18,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+            lineHeight: 1.55
+          }}
+        >
+          <Step n={1} title="Generate a token">
+            Below this dialog: name your token (e.g. <em>"Claude Desktop · laptop"</em>), tick{" "}
+            <strong>Read-only</strong> if the agent should never mutate, then click{" "}
+            <strong>Generate token</strong>. The token is shown <strong>once</strong> — copy it
+            immediately.
+          </Step>
+
+          <Step n={2} title="Endpoint">
+            <CodeBlock
+              text={endpoint}
+              onCopy={() => copy(endpoint, "Endpoint")}
+              label="Endpoint URL"
+            />
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>
+              Authentication is <code>Authorization: Bearer &lt;token&gt;</code>. Tokens inherit
+              your role; every call is recorded in the audit log with source <code>mcp</code>.
+            </div>
+          </Step>
+
+          <Step n={3} title="Claude Desktop">
+            Add this to <code>claude_desktop_config.json</code> (macOS:{" "}
+            <code>~/Library/Application Support/Claude/</code>, Windows:{" "}
+            <code>%APPDATA%\Claude\</code>):
+            <CodeBlock
+              text={claudeDesktopJson}
+              onCopy={() => copy(claudeDesktopJson, "Config")}
+              label="claude_desktop_config.json"
+              multiline
+            />
+            Replace <code>&lt;YOUR_TOKEN&gt;</code> with the token from step 1, then restart Claude
+            Desktop.
+          </Step>
+
+          <Step n={4} title="Claude Code (CLI)">
+            <CodeBlock
+              text={claudeCliCmd}
+              onCopy={() => copy(claudeCliCmd, "Command")}
+              label="Terminal command"
+              multiline
+            />
+          </Step>
+
+          <Step n={5} title="Other MCP clients">
+            Any client that speaks MCP over Streamable HTTP works — point it at the endpoint above
+            and pass the <code>Authorization: Bearer …</code> header.
+          </Step>
+
+          <div
+            style={{
+              padding: 10,
+              background: "var(--bg-2)",
+              border: "1px solid var(--line)",
+              borderRadius: 6,
+              fontSize: 11.5,
+              color: "var(--ink-3)"
+            }}
+          >
+            <strong style={{ color: "var(--ink-2)" }}>Permissions:</strong> Admin → full; Editor →
+            full unless the token is read-only; Reviewer → read-only regardless. Only Admins can
+            call <code>list_audit_events</code>.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "26px 1fr", gap: 12 }}>
+      <div
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 999,
+          background: "var(--bg-3)",
+          color: "var(--ink-2)",
+          fontSize: 11,
+          fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginTop: 1
+        }}
+      >
+        {n}
+      </div>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: 6 }}>
+          {title}
+        </div>
+        <div>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function CodeBlock({
+  text,
+  onCopy,
+  label,
+  multiline
+}: {
+  text: string;
+  onCopy: () => void;
+  label: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        marginTop: 6,
+        background: "var(--bg-2)",
+        border: "1px solid var(--line)",
+        borderRadius: 6,
+        padding: multiline ? "10px 44px 10px 10px" : "8px 44px 8px 10px",
+        fontFamily: "var(--font-mono)",
+        fontSize: 11.5,
+        color: "var(--ink)",
+        whiteSpace: multiline ? "pre" : "nowrap",
+        overflowX: "auto"
+      }}
+    >
+      {text}
+      <button
+        type="button"
+        onClick={onCopy}
+        aria-label={`Copy ${label}`}
+        title={`Copy ${label}`}
+        className="sx-btn sx-btn-ghost sx-btn-sm"
+        style={{ position: "absolute", top: 4, right: 4, padding: 4 }}
+      >
+        <Icon name="copy" size={12} />
+      </button>
+    </div>
   );
 }
