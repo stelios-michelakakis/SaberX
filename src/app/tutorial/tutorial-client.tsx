@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -8,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
   type CSSProperties,
   type ReactNode
 } from "react";
@@ -15,6 +15,7 @@ import { Icon } from "@/components/saberx/icon";
 import { PageHeader } from "@/components/saberx/page-header";
 import { Avatar } from "@/components/saberx/avatar";
 import { ThemeProvider, accentVars, useTweaks } from "@/components/saberx/theme-provider";
+import { finishTutorial } from "./actions";
 
 /* ============================================================
    Mock data — entirely client-side; nothing touches the DB.
@@ -317,39 +318,23 @@ export function TutorialClient({ userName, userRole }: { userName: string; userR
 }
 
 function TutorialInner({ userName, userRole }: { userName: string; userRole: string }) {
-  const router = useRouter();
   const { tweaks } = useTweaks();
   const dark = tweaks.theme === "dark";
   const accent = accentVars(tweaks.accent, dark);
 
   const [stepIdx, setStepIdx] = useState(0);
+  const [exiting, startTransition] = useTransition();
   const step = STEPS[stepIdx];
   const last = STEPS.length - 1;
 
-  const exit = useCallback(
-    async (skip: boolean) => {
-      // Mark the tutorial complete on the user record before navigating so
-      // the dashboard sees the updated flag and doesn't bounce us back here.
-      let persisted = false;
-      try {
-        const r = await fetch("/api/me/tutorial", { method: "POST" });
-        persisted = r.ok;
-        if (!r.ok) {
-          // eslint-disable-next-line no-console
-          console.error("POST /api/me/tutorial failed", r.status, await r.text().catch(() => ""));
-        }
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("POST /api/me/tutorial threw", err);
-      }
-      // Invalidate the router cache so the dashboard layout re-fetches the
-      // session user and picks up the new tutorial_completed_at value.
-      router.refresh();
-      router.push(skip ? "/dashboard" : "/dashboard/profile");
-      void persisted;
-    },
-    [router]
-  );
+  const exit = useCallback((skip: boolean) => {
+    // Server action flips the flag, invalidates the dashboard layout cache,
+    // and redirects in one round-trip. No client fetch, no router.push.
+    startTransition(() => {
+      void finishTutorial(skip);
+    });
+  }, []);
+  void exiting;
 
   useEffect(() => {
     if (typeof document === "undefined") return;

@@ -19,11 +19,11 @@ const isEditableTarget = (target: EventTarget | null) => {
 export function Topbar({
   breadcrumbs,
   firstDocumentId,
-  tutorialCompleted
+  tutorialSeen
 }: {
   breadcrumbs: string[];
   firstDocumentId?: string;
-  tutorialCompleted: boolean;
+  tutorialSeen: boolean;
 }) {
   const router = useRouter();
   const { tweaks, toggle } = useTweaks();
@@ -245,7 +245,7 @@ export function Topbar({
           <Icon name={tweaks.theme === "dark" ? "sun" : "moon"} />
         </button>
         <TweaksPanelTrigger />
-        <HelpMenu firstDocumentId={firstDocumentId} tutorialCompleted={tutorialCompleted} />
+        <HelpMenu firstDocumentId={firstDocumentId} tutorialSeen={tutorialSeen} />
         <div style={{ width: 1, height: 18, background: "var(--line)", margin: "0 4px" }} />
         <input
           ref={fileRef}

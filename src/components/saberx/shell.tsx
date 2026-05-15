@@ -37,13 +37,13 @@ export function Shell({
   user,
   integrityCount,
   documents,
-  tutorialCompleted
+  tutorialSeen
 }: {
   children: ReactNode;
   user: { name: string; role: string };
   integrityCount: number;
   documents: { id: string; title: string }[];
-  tutorialCompleted: boolean;
+  tutorialSeen: boolean;
 }) {
   const { tweaks } = useTweaks();
   const dark = tweaks.theme === "dark";
@@ -87,7 +87,7 @@ export function Shell({
           <Topbar
             breadcrumbs={breadcrumbs}
             firstDocumentId={documents[0]?.id}
-            tutorialCompleted={tutorialCompleted}
+            tutorialSeen={tutorialSeen}
           />
           <div
             style={{
