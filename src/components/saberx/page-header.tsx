@@ -15,6 +15,7 @@ export function PageHeader({
 }) {
   return (
     <div
+      data-tour="page-header"
       style={{
         padding: "20px 28px 16px",
         borderBottom: "1px solid var(--line)",

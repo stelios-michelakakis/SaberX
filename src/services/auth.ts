@@ -250,6 +250,34 @@ export async function revokeInvitation(actor: { userId: string; username: string
   return after;
 }
 
+// Resolves an invitation token to the public-facing details (username, email)
+// shown on the activation page. Returns null for any token that has been used,
+// revoked, or expired so we don't leak the existence of stale invitations.
+export async function lookupInvitation(rawToken: string) {
+  const tokenHash = hashToken(`${process.env.INVITATION_SECRET ?? ""}:${rawToken}`);
+  const [invitation] = await db
+    .select({
+      id: invitations.id,
+      invitedEmail: invitations.invitedEmail,
+      preassignedUsername: invitations.preassignedUsername,
+      status: invitations.status,
+      expiresAt: invitations.expiresAt,
+      revokedAt: invitations.revokedAt,
+      usedAt: invitations.usedAt
+    })
+    .from(invitations)
+    .where(eq(invitations.tokenHash, tokenHash))
+    .limit(1);
+  if (!invitation) return null;
+  if (invitation.status !== "pending" || invitation.revokedAt || invitation.usedAt || invitation.expiresAt < new Date()) {
+    return null;
+  }
+  return {
+    email: invitation.invitedEmail,
+    username: invitation.preassignedUsername
+  };
+}
+
 export async function acceptInvitation(rawToken: string, password: string) {
   const tokenHash = hashToken(`${process.env.INVITATION_SECRET ?? ""}:${rawToken}`);
   const [invitation] = await db.select().from(invitations).where(eq(invitations.tokenHash, tokenHash)).limit(1);

@@ -389,6 +389,7 @@ export function DocumentClient({
       </div>
 
       <div
+        data-tour="doc-sheets-tabs"
         style={{
           display: "flex",
           gap: 2,
@@ -802,6 +803,7 @@ function Grid({
         </div>
       )}
       <div
+        data-tour="doc-grid"
         style={{
           border: "1px solid var(--line)",
           borderRadius: "var(--sx-radius-lg)",
@@ -853,6 +855,7 @@ function Grid({
                 >
                   <button
                     type="button"
+                    data-tour="doc-add-column"
                     onClick={onAddColumn}
                     className="sx-btn sx-btn-ghost sx-btn-sm"
                     style={{
@@ -956,6 +959,7 @@ function AddRowFooter({
 }) {
   return (
     <tr
+      data-tour="doc-add-row"
       onClick={() => {
         if (!busy) onClick();
       }}

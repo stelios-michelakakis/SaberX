@@ -82,7 +82,7 @@ export function Shell({
             overflow: "hidden"
           }}
         >
-          <Topbar breadcrumbs={breadcrumbs} />
+          <Topbar breadcrumbs={breadcrumbs} firstDocumentId={documents[0]?.id} />
           <div
             style={{
               flex: 1,

@@ -31,5 +31,5 @@ export default async function AdminPage() {
       </>
     );
   }
-  return <AdminClient />;
+  return <AdminClient currentUserId={user.userId} />;
 }

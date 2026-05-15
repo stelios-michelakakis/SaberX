@@ -40,7 +40,7 @@ const INVITE_PILL: Record<string, string> = {
   expired: "pill pill-red"
 };
 
-export function AdminClient() {
+export function AdminClient({ currentUserId }: { currentUserId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [email, setEmail] = useState("");
@@ -49,6 +49,27 @@ export function AdminClient() {
   const [activationUrl, setActivationUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
+  const [pendingRemoveUserId, setPendingRemoveUserId] = useState<string | null>(null);
+
+  const removeUser = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+      if (!r.ok) {
+        const detail = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(detail.error ?? "Remove failed");
+      }
+      return r.json() as Promise<{ removed: boolean; username: string }>;
+    },
+    onSuccess: (data) => {
+      toast.success("User removed", { detail: `${data.username} has been permanently removed` });
+      setPendingRemoveUserId(null);
+      queryClient.invalidateQueries({ queryKey: ["sx-admin-users"] });
+    },
+    onError: (err) => {
+      toast.error("Remove failed", { detail: (err as Error).message });
+      setPendingRemoveUserId(null);
+    }
+  });
 
   const usersQuery = useQuery({
     queryKey: ["sx-admin-users"],
@@ -201,39 +222,82 @@ export function AdminClient() {
                   <Th>Status</Th>
                   <Th>Roles</Th>
                   <Th>Last seen</Th>
+                  <Th>Actions</Th>
                 </tr>
               </thead>
               <tbody>
-                {usersQuery.data.users.map((u) => (
-                  <tr key={u.id} style={{ borderTop: "1px solid var(--line)" }}>
-                    <Td>
-                      <strong style={{ color: "var(--ink)" }}>
-                        {[u.firstName, u.lastName].filter(Boolean).join(" ") || u.username}
-                      </strong>
-                    </Td>
-                    <Td>
-                      <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                        {u.username}
-                      </span>
-                    </Td>
-                    <Td muted>{u.email}</Td>
-                    <Td>
-                      <span className={STATUS_PILL[u.accountStatus] ?? "pill"}>
-                        {u.accountStatus.replace(/_/g, " ")}
-                      </span>
-                    </Td>
-                    <Td>
-                      {u.roles.map((r) => (
-                        <span key={r} className="pill pill-accent" style={{ marginRight: 4 }}>
-                          {r}
+                {usersQuery.data.users.map((u) => {
+                  const isSelf = u.id === currentUserId;
+                  const isPending = pendingRemoveUserId === u.id;
+                  const isRemoving = removeUser.isPending && removeUser.variables === u.id;
+                  return (
+                    <tr key={u.id} style={{ borderTop: "1px solid var(--line)" }}>
+                      <Td>
+                        <strong style={{ color: "var(--ink)" }}>
+                          {[u.firstName, u.lastName].filter(Boolean).join(" ") || u.username}
+                        </strong>
+                      </Td>
+                      <Td>
+                        <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                          {u.username}
                         </span>
-                      ))}
-                    </Td>
-                    <Td muted>
-                      {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : "—"}
-                    </Td>
-                  </tr>
-                ))}
+                      </Td>
+                      <Td muted>{u.email}</Td>
+                      <Td>
+                        <span className={STATUS_PILL[u.accountStatus] ?? "pill"}>
+                          {u.accountStatus.replace(/_/g, " ")}
+                        </span>
+                      </Td>
+                      <Td>
+                        {u.roles.map((r) => (
+                          <span key={r} className="pill pill-accent" style={{ marginRight: 4 }}>
+                            {r}
+                          </span>
+                        ))}
+                      </Td>
+                      <Td muted>
+                        {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : "—"}
+                      </Td>
+                      <Td>
+                        {isSelf ? (
+                          <span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>You</span>
+                        ) : isPending ? (
+                          <span style={{ display: "inline-flex", gap: 6 }}>
+                            <button
+                              className="sx-btn sx-btn-sm"
+                              type="button"
+                              disabled={isRemoving}
+                              onClick={() => removeUser.mutate(u.id)}
+                              style={{ color: "var(--red)", borderColor: "var(--red)" }}
+                              title="Permanently remove this user from the database"
+                            >
+                              <Icon name="trash" size={12} />
+                              {isRemoving ? "Removing…" : "Confirm remove"}
+                            </button>
+                            <button
+                              className="sx-btn sx-btn-sm"
+                              type="button"
+                              disabled={isRemoving}
+                              onClick={() => setPendingRemoveUserId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            className="sx-btn sx-btn-sm"
+                            type="button"
+                            onClick={() => setPendingRemoveUserId(u.id)}
+                            title="Permanently remove this user"
+                          >
+                            <Icon name="trash" size={12} />
+                            Remove
+                          </button>
+                        )}
+                      </Td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

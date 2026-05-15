@@ -66,6 +66,7 @@ export function Sidebar({ user, integrityCount = 0, documents = [] }: Props) {
 
   return (
     <aside
+      data-tour="sidebar"
       style={{
         width: W,
         flex: "none",
@@ -167,7 +168,7 @@ export function Sidebar({ user, integrityCount = 0, documents = [] }: Props) {
                     gap: 10,
                     padding: collapsed ? "6px 8px" : "5px 8px 5px 22px",
                     borderRadius: 6,
-                    background: active ? "var(--bg-3)" : "transparent",
+                    background: active ? "var(--accent-soft)" : "transparent",
                     color: active ? "var(--ink)" : "var(--ink-2)",
                     textDecoration: "none",
                     fontSize: 12.5,
@@ -289,6 +290,7 @@ function DocumentsRow({
 }) {
   return (
     <div
+      data-tour="nav-documents"
       style={{
         display: "flex",
         alignItems: "center",
@@ -306,7 +308,7 @@ function DocumentsRow({
           gap: 10,
           padding: collapsed ? "7px 8px" : "6px 8px",
           borderRadius: 6,
-          background: active ? "var(--bg-3)" : "transparent",
+          background: active ? "var(--accent-soft)" : "transparent",
           color: active ? "var(--ink)" : "var(--ink-2)",
           textDecoration: "none",
           fontSize: 12.5,
@@ -356,7 +358,7 @@ function NavLink({
         gap: 10,
         padding: collapsed ? "7px 8px" : item.indent ? "6px 8px 6px 22px" : "6px 8px",
         borderRadius: 6,
-        background: active ? "var(--bg-3)" : "transparent",
+        background: active ? "var(--accent-soft)" : "transparent",
         color: active ? "var(--ink)" : "var(--ink-2)",
         textDecoration: "none",
         fontSize: 12.5,
