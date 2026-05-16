@@ -73,6 +73,7 @@ export function Cell(props: CellProps) {
   if (field.isIdField) {
     return (
       <td
+        data-field-id={field.id}
         style={{
           ...baseTd,
           color: "var(--accent-ink)",
@@ -100,6 +101,7 @@ export function Cell(props: CellProps) {
 
   return (
     <td
+      data-field-id={field.id}
       style={{
         ...baseTd,
         cursor: "text",
@@ -120,7 +122,7 @@ export function Cell(props: CellProps) {
 
 function ReadOnlyCell({ field, value }: { field: FieldVm; value: unknown }) {
   return (
-    <td style={{ ...baseTd, color: "var(--ink-3)" }}>
+    <td data-field-id={field.id} style={{ ...baseTd, color: "var(--ink-3)" }}>
       <DisplayValue field={field} value={value} />
     </td>
   );
