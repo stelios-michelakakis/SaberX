@@ -92,6 +92,15 @@ export function ChatDock({ documentId }: { documentId: string }) {
 
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const popoverListRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!popover) return;
+    const container = popoverListRef.current;
+    if (!container) return;
+    const child = container.children[popover.selectedIdx] as HTMLElement | undefined;
+    child?.scrollIntoView({ block: "nearest" });
+  }, [popover?.selectedIdx, popover?.items]);
 
   useEffect(() => {
     if (open) resetUnread();
@@ -314,6 +323,7 @@ export function ChatDock({ documentId }: { documentId: string }) {
           <div style={{ borderTop: "1px solid var(--line)", padding: 10, position: "relative" }}>
             {popover && popover.items.length > 0 && (
               <div
+                ref={popoverListRef}
                 style={{
                   position: "absolute",
                   bottom: "100%",
