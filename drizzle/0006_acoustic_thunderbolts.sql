@@ -1,0 +1,2 @@
+ALTER TABLE "reference_bindings" ADD COLUMN "display_field_id" uuid;--> statement-breakpoint
+ALTER TABLE "reference_bindings" ADD CONSTRAINT "reference_bindings_display_field_id_fields_id_fk" FOREIGN KEY ("display_field_id") REFERENCES "public"."fields"("id") ON DELETE set null ON UPDATE no action;

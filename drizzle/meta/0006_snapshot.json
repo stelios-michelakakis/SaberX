@@ -1,6 +1,6 @@
 {
-  "id": "c30c20a5-1caa-4071-bfc3-d92e052710ff",
-  "prevId": "3db69ddc-b4f6-464d-8eae-8ebc4b2207fa",
+  "id": "a20a92a1-b133-4c8f-83eb-25e92223e823",
+  "prevId": "c30c20a5-1caa-4071-bfc3-d92e052710ff",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2885,6 +2885,12 @@
           "notNull": true,
           "default": false
         },
+        "display_field_id": {
+          "name": "display_field_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2989,6 +2995,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reference_bindings_display_field_id_fields_id_fk": {
+          "name": "reference_bindings_display_field_id_fields_id_fk",
+          "tableFrom": "reference_bindings",
+          "tableTo": "fields",
+          "columnsFrom": [
+            "display_field_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

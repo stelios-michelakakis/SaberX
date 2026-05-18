@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Icon } from "./icon";
 import { FIELD_TYPES } from "@/lib/constants";
 
@@ -13,7 +14,7 @@ export type FieldFormValue = {
   unique: boolean;
   editable: boolean;
   options: string; // comma/newline-separated
-  bindings: { allowedSheetId: string; allowSelfReference: boolean }[];
+  bindings: { allowedSheetId: string; allowSelfReference: boolean; displayFieldId: string | null }[];
 };
 
 export const EMPTY_FIELD_VALUE: FieldFormValue = {
@@ -59,10 +60,20 @@ export function FieldFormFields({
           ...value.bindings,
           {
             allowedSheetId: sheetId,
-            allowSelfReference: sheetId === currentSheetId
+            allowSelfReference: sheetId === currentSheetId,
+            displayFieldId: null
           }
         ];
     update("bindings", next);
+  };
+
+  const setDisplayField = (sheetId: string, displayFieldId: string | null) => {
+    update(
+      "bindings",
+      value.bindings.map((b) =>
+        b.allowedSheetId === sheetId ? { ...b, displayFieldId } : b
+      )
+    );
   };
 
   const referenceMode = isReferenceType(value.type);
@@ -178,6 +189,37 @@ export function FieldFormFields({
             Leave empty to allow references to any sheet in this document (excluding open
             issues).
           </p>
+          {value.bindings.length > 0 && (
+            <div style={{ display: "grid", gap: 6, marginTop: 4 }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--ink-3)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em"
+                }}
+              >
+                Display field per target
+              </span>
+              {value.bindings.map((b) => {
+                const sheet = eligibleSheets.find((s) => s.id === b.allowedSheetId);
+                if (!sheet) return null;
+                return (
+                  <DisplayFieldRow
+                    key={b.allowedSheetId}
+                    sheetId={b.allowedSheetId}
+                    sheetName={sheet.name}
+                    value={b.displayFieldId}
+                    onChange={(next) => setDisplayField(b.allowedSheetId, next)}
+                  />
+                );
+              })}
+              <p style={{ margin: 0, color: "var(--ink-4)", fontSize: 11 }}>
+                Reference chips and pickers will show the chosen field&apos;s value instead
+                of the row ID. Defaults to the ID field.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -217,6 +259,74 @@ export function FieldFormFields({
         </label>
       </div>
     </>
+  );
+}
+
+type SheetFieldOption = { id: string; label: string; type: string };
+
+function DisplayFieldRow({
+  sheetId,
+  sheetName,
+  value,
+  onChange
+}: {
+  sheetId: string;
+  sheetName: string;
+  value: string | null;
+  onChange: (next: string | null) => void;
+}) {
+  const [options, setOptions] = useState<SheetFieldOption[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setOptions(null);
+    setError(null);
+    fetch(`/api/sheets/${sheetId}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Failed (${r.status})`);
+        const data = (await r.json()) as { fields?: { id: string; label: string; type: string }[] };
+        if (cancelled) return;
+        setOptions(
+          (data.fields ?? []).map((f) => ({ id: f.id, label: f.label, type: f.type }))
+        );
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheetId]);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 2fr",
+        gap: 8,
+        alignItems: "center",
+        fontSize: 12.5
+      }}
+    >
+      <span style={{ color: "var(--ink-2)" }}>{sheetName}</span>
+      {error && <span style={{ color: "var(--red)", fontSize: 11 }}>{error}</span>}
+      {!error && (
+        <select
+          className="select"
+          value={value ?? ""}
+          disabled={options === null}
+          onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+        >
+          <option value="">Use ID field (default)</option>
+          {(options ?? []).map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label} ({o.type})
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
   );
 }
 
@@ -261,6 +371,12 @@ export function buildFieldPayload(value: FieldFormValue) {
     unique: value.unique,
     editable: value.editable,
     options: optionList,
-    bindings: isReferenceType(value.type) ? value.bindings : []
+    bindings: isReferenceType(value.type)
+      ? value.bindings.map((b) => ({
+          allowedSheetId: b.allowedSheetId,
+          allowSelfReference: b.allowSelfReference,
+          displayFieldId: b.displayFieldId
+        }))
+      : []
   };
 }

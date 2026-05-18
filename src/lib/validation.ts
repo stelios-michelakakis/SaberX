@@ -65,7 +65,8 @@ export const sheetUpdateSchema = z.object({
 
 export const referenceBindingSchema = z.object({
   allowedSheetId: z.string().uuid(),
-  allowSelfReference: z.boolean().default(false)
+  allowSelfReference: z.boolean().default(false),
+  displayFieldId: z.string().uuid().nullable().optional()
 });
 
 export const fieldCreateSchema = z.object({

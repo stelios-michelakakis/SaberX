@@ -9,6 +9,7 @@ export type TraceLink = {
   sourceRowId: string;
   sourceFieldId: string;
   targetRowId: string;
+  targetDisplay?: string | null;
 };
 
 export type TraceRow = {
@@ -236,14 +237,31 @@ function TraceTable({
                   {tgt ? (
                     <Link
                       href={`/dashboard/documents/${tgt.documentId}?sheet=${tgt.sheetId}`}
-                      className="mono"
                       style={{
                         color: "var(--accent-ink)",
                         textDecoration: "none",
-                        fontSize: 11.5
+                        fontSize: 12,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6
                       }}
                     >
-                      {tgt.visibleId || link.targetRowId.slice(0, 8)}
+                      {link.targetDisplay ? (
+                        <>
+                          <span style={{ color: "var(--ink)" }}>{link.targetDisplay}</span>
+                          <span
+                            className="mono"
+                            style={{ color: "var(--ink-3)", fontSize: 11 }}
+                            title="Row ID"
+                          >
+                            {tgt.visibleId || link.targetRowId.slice(0, 8)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="mono" style={{ fontSize: 11.5 }}>
+                          {tgt.visibleId || link.targetRowId.slice(0, 8)}
+                        </span>
+                      )}
                     </Link>
                   ) : (
                     <span className="mono" style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
