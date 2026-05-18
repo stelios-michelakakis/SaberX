@@ -143,6 +143,8 @@ export function ProfileClient({
           <Field label="First name">
             <input
               className="input"
+              name="given-name"
+              autoComplete="given-name"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
             />
@@ -150,6 +152,8 @@ export function ProfileClient({
           <Field label="Last name">
             <input
               className="input"
+              name="family-name"
+              autoComplete="family-name"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
             />
@@ -157,6 +161,8 @@ export function ProfileClient({
           <Field label="Organisation" full>
             <input
               className="input"
+              name="organization"
+              autoComplete="organization"
               value={organization}
               onChange={(e) => setOrganization(e.target.value)}
             />
