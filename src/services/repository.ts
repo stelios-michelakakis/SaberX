@@ -1427,22 +1427,41 @@ export async function refreshGlossary(documentId: string, user: ActorUser | null
   ];
 
   if (entries.length) await client.insert(glossaryEntries).values(entries);
-  await writeAudit(
-    {
-      transactionId,
-      actor: user ? actor(user) : { id: null, username: "system" },
-      actionType: "GLOSSARY_REFRESH",
-      entityType: "glossary",
-      entityId: documentId,
-      parentDocumentId: documentId,
-      parentDocumentName: document.title,
-      before: { count: before.length },
-      after: { count: entries.length },
-      summary: `Refreshed glossary for ${document.title}`,
-      sourceType: "system"
-    },
-    client
-  );
+
+  const signature = (
+    list: {
+      block: string;
+      fieldOrCode: string;
+      valueOrMeaning: string;
+      sourceEntityType: string;
+      sourceEntityId: string;
+    }[]
+  ) =>
+    JSON.stringify(
+      list
+        .map((e) => [e.block, e.fieldOrCode, e.valueOrMeaning, e.sourceEntityType, e.sourceEntityId])
+        .sort()
+    );
+  const changed = signature(before) !== signature(entries);
+
+  if (changed) {
+    await writeAudit(
+      {
+        transactionId,
+        actor: user ? actor(user) : { id: null, username: "system" },
+        actionType: "GLOSSARY_REFRESH",
+        entityType: "glossary",
+        entityId: documentId,
+        parentDocumentId: documentId,
+        parentDocumentName: document.title,
+        before: { count: before.length },
+        after: { count: entries.length },
+        summary: `Refreshed glossary for ${document.title}`,
+        sourceType: "system"
+      },
+      client
+    );
+  }
   return entries;
 }
 
