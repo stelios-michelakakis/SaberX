@@ -657,6 +657,51 @@ export const searchIndex = pgTable(
   })
 );
 
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    documentIdx: index("chat_messages_document_id_idx").on(table.documentId),
+    documentCreatedIdx: index("chat_messages_document_created_idx").on(table.documentId, table.createdAt),
+    authorIdx: index("chat_messages_author_id_idx").on(table.authorId)
+  })
+);
+
+export const chatMentions = pgTable(
+  "chat_mentions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => chatMessages.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 20 }).notNull(),
+    offset: integer("offset").notNull(),
+    length: integer("length").notNull(),
+    targetUserId: uuid("target_user_id").references(() => users.id, { onDelete: "set null" }),
+    targetDocumentId: uuid("target_document_id").references(() => documents.id, { onDelete: "set null" }),
+    targetSheetId: uuid("target_sheet_id").references(() => sheets.id, { onDelete: "set null" }),
+    targetRowId: uuid("target_row_id").references(() => rows.id, { onDelete: "set null" }),
+    targetFieldId: uuid("target_field_id").references(() => fields.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    messageIdx: index("chat_mentions_message_id_idx").on(table.messageId),
+    targetUserIdx: index("chat_mentions_target_user_id_idx").on(table.targetUserId)
+  })
+);
+
 export type User = typeof users.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type Sheet = typeof sheets.$inferSelect;

@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Icon } from "@/components/saberx/icon";
 import { useToast } from "@/components/saberx/toast";
+import { ChatDock } from "@/components/realtime/chat-dock";
+import { PresenceBar } from "@/components/realtime/presence-bar";
+import { SelectionOverlay } from "@/components/realtime/selection-overlay";
+import { useRealtime } from "@/components/realtime/use-realtime";
 import { Cell, cellDisplay, readCell, type FieldVm } from "./cell-editor";
 import { EditDocumentModal } from "./edit-document-modal";
 import { NewSheetModal } from "./new-sheet-modal";
@@ -78,6 +82,64 @@ export function DocumentClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const toast = useToast();
+  const { setSelection } = useRealtime(document.id);
+
+  // Clear the broadcast selection when the active sheet changes.
+  // Per-cell selection is pushed directly from the row onClick handler so we
+  // don't race-reset fieldId after a cell click.
+  useEffect(() => {
+    setSelection({ sheetId: activeSheetId, rowId: null, fieldId: null });
+  }, [activeSheetId, setSelection]);
+
+  // Flash-highlight a row/cell when navigated to via a mention link (?focusRow=&focusField=&flash=1)
+  useEffect(() => {
+    if (!grid) return;
+    const flash = searchParams?.get("flash");
+    const focusRow = searchParams?.get("focusRow");
+    const focusField = searchParams?.get("focusField");
+    if (!flash || !focusRow) return;
+
+    setSelectedRow(focusRow);
+
+    const tryFlash = () => {
+      const selector = focusField
+        ? `tr[data-row-id="${focusRow}"] td[data-field-id="${focusField}"]`
+        : `tr[data-row-id="${focusRow}"]`;
+      const el = document.querySelector<HTMLElement>(selector);
+      if (!el) return false;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const prev = el.style.transition;
+      const prevBg = el.style.background;
+      const prevOutline = el.style.boxShadow;
+      el.style.transition = "box-shadow 0.2s ease, background 0.2s ease";
+      el.style.boxShadow = "inset 0 0 0 2px var(--sx-accent)";
+      el.style.background = "var(--accent-soft)";
+      setTimeout(() => {
+        el.style.boxShadow = prevOutline;
+        el.style.background = prevBg;
+        setTimeout(() => {
+          el.style.transition = prev;
+        }, 250);
+      }, 1400);
+      return true;
+    };
+
+    let attempts = 0;
+    const tick = () => {
+      if (tryFlash() || ++attempts > 20) {
+        const params = new URLSearchParams(searchParams?.toString());
+        params.delete("flash");
+        params.delete("focusRow");
+        params.delete("focusField");
+        const qs = params.toString();
+        router.replace(`/dashboard/documents/${document.id}${qs ? `?${qs}` : ""}`);
+        return;
+      }
+      setTimeout(tick, 80);
+    };
+    tick();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid?.sheet.id, searchParams?.get("flash"), searchParams?.get("focusRow"), searchParams?.get("focusField")]);
 
   const refreshGrid = async () => {
     if (!grid) return;
@@ -382,8 +444,11 @@ export function DocumentClient({
               <span className="pill">v{document.version}</span>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            {headerActions}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <PresenceBar />
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {headerActions}
+            </div>
           </div>
         </div>
       </div>
@@ -461,6 +526,9 @@ export function DocumentClient({
               grid={grid}
               selectedRow={selectedRow}
               onSelectRow={setSelectedRow}
+              onSelectCell={(rowId, fieldId) =>
+                setSelection({ sheetId: grid.sheet.id, rowId, fieldId: fieldId ?? null })
+              }
               onPatchCell={onPatchCell}
               onDeleteRow={onDeleteRow}
               onCreateRow={onCreateRow}
@@ -468,11 +536,14 @@ export function DocumentClient({
               onAddColumn={() => setAddColumnOpen(true)}
             />
           )}
+          <SelectionOverlay activeSheetId={activeSheetId} />
         </div>
         {grid && !isInstructions && grid.sheet.sheetKind !== "glossary" && (
           <Inspector grid={grid} selectedRowId={selectedRow} />
         )}
       </div>
+
+      <ChatDock documentId={document.id} />
 
       {editOpen && (
         <EditDocumentModal
@@ -760,6 +831,7 @@ function Grid({
   grid,
   selectedRow,
   onSelectRow,
+  onSelectCell,
   onPatchCell,
   onDeleteRow,
   onCreateRow,
@@ -769,6 +841,7 @@ function Grid({
   grid: GridResponse;
   selectedRow: string | null;
   onSelectRow: (id: string) => void;
+  onSelectCell: (rowId: string, fieldId: string | null) => void;
   onPatchCell: (rowId: string, fieldId: string, value: unknown) => void;
   onDeleteRow: (rowId: string) => void;
   onCreateRow: () => void;
@@ -891,7 +964,12 @@ function Grid({
               return (
                 <tr
                   key={row.id}
-                  onClick={() => onSelectRow(row.id)}
+                  data-row-id={row.id}
+                  onClick={(e) => {
+                    onSelectRow(row.id);
+                    const tgt = (e.target as HTMLElement).closest<HTMLElement>("td[data-field-id]");
+                    onSelectCell(row.id, tgt?.dataset.fieldId ?? null);
+                  }}
                   style={{
                     borderTop: "1px solid var(--line)",
                     background: active ? "var(--accent-soft)" : undefined,
