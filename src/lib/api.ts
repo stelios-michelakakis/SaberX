@@ -15,11 +15,16 @@ export function fail(message: string, status = 400, detail?: unknown) {
 
 export function mapError(error: unknown) {
   if (error instanceof ZodError) {
+    console.error("[api] validation failed", JSON.stringify(error.flatten()));
     return fail("Validation failed", 422, error.flatten());
   }
   if (error instanceof Error) {
     const status = error.message === "Unauthorized" ? 401 : error.message === "Forbidden" ? 403 : 400;
+    if (status >= 500 || (status === 400 && error.message !== "Unauthorized" && error.message !== "Forbidden")) {
+      console.error("[api]", error.message, error.stack);
+    }
     return fail(error.message, status);
   }
+  console.error("[api] non-Error thrown", error);
   return fail("Unexpected server error", 500);
 }

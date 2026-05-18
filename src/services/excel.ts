@@ -40,6 +40,8 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
   let sheetCount = 0;
   let rowCount = 0;
 
+  const skipped: { sheet: string; reason: string }[] = [];
+
   for (const worksheet of sourceSheets) {
     const normalizedName = normalizeSheetName(worksheet.name);
     if (["INSTRUCTIONS", "GLOSSARY", "OPEN ISSUES"].includes(normalizedName)) continue;
@@ -50,8 +52,30 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
       .filter(Boolean);
     if (!headers.length) continue;
 
-    const prefix = headers.find((header) => /_?id$/i.test(header))?.replace(/_?id$/i, "").slice(0, 8) || worksheet.name.slice(0, 3).replace(/[^a-z0-9]/gi, "") || "ID";
-    const sheet = await createUserSheet(user, document.id, { name: worksheet.name, description: `Imported worksheet ${worksheet.name}`, idPrefix: prefix.toUpperCase(), zeroPad: 2 });
+    // Derive a 1-20 char alphanumeric prefix. Strip ALL non-alphanumerics from
+    // every candidate path so separators in header names (e.g. "part-id") don't
+    // bubble into createUserSheet and trip assertNoCompoundPrefix.
+    const sanitize = (s: string) => s.replace(/[^a-z0-9]/gi, "");
+    const fromHeader = headers.find((header) => /_?id$/i.test(header))?.replace(/_?id$/i, "") ?? "";
+    const prefix =
+      sanitize(fromHeader).slice(0, 8) ||
+      sanitize(worksheet.name).slice(0, 3) ||
+      "ID";
+
+    let sheet;
+    try {
+      sheet = await createUserSheet(user, document.id, {
+        name: worksheet.name,
+        description: `Imported worksheet ${worksheet.name}`,
+        idPrefix: prefix.toUpperCase(),
+        zeroPad: 2
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`[import] skipped sheet "${worksheet.name}": ${reason}`);
+      skipped.push({ sheet: worksheet.name, reason });
+      continue;
+    }
     sheetCount += 1;
 
     const dataRows: unknown[][] = [];
@@ -111,12 +135,15 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
     entityId: importJob.id,
     parentDocumentId: document.id,
     parentDocumentName: document.title,
-    after: { sheetCount, rowCount },
-    summary: `Imported ${filename}: ${sheetCount} sheets, ${rowCount} rows`,
+    after: { sheetCount, rowCount, skipped },
+    summary:
+      skipped.length > 0
+        ? `Imported ${filename}: ${sheetCount} sheets, ${rowCount} rows. Skipped ${skipped.length} sheet(s): ${skipped.map((s) => `${s.sheet} (${s.reason})`).join("; ")}`
+        : `Imported ${filename}: ${sheetCount} sheets, ${rowCount} rows`,
     sourceType: "import"
   });
 
-  return { importJob, document, summary: { sheetCount, rowCount } };
+  return { importJob, document, summary: { sheetCount, rowCount, skipped } };
 }
 
 export async function exportWorkbook(user: ActorUser, documentId: string) {
