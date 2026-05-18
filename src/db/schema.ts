@@ -357,6 +357,9 @@ export const referenceBindings = pgTable(
     // target row instead of the row's visible ID. Falls back to visible ID if null
     // or if the referenced field's value is empty.
     displayFieldId: uuid("display_field_id").references(() => fields.id, { onDelete: "set null" }),
+    // When true, the reference picker also lists uploaded sources (PDF/DOCX/MD/TXT)
+    // alongside row targets. Sources are global, not scoped to any sheet.
+    allowSources: boolean("allow_sources").notNull().default(false),
     ...timestamps
   },
   (table) => ({
@@ -415,6 +418,27 @@ export const cellValuesScalar = pgTable(
   })
 );
 
+export const sources = pgTable(
+  "sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    filename: varchar("filename", { length: 320 }).notNull(),
+    mimeType: varchar("mime_type", { length: 160 }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: varchar("sha256", { length: 64 }).notNull(),
+    storagePath: varchar("storage_path", { length: 320 }).notNull(),
+    uploadedBy: uuid("uploaded_by").references(() => users.id),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    sha256Idx: uniqueIndex("sources_sha256_unique").on(table.sha256),
+    filenameIdx: index("sources_filename_idx").on(table.filename),
+    uploadedByIdx: index("sources_uploaded_by_idx").on(table.uploadedBy),
+    deletedIdx: index("sources_deleted_at_idx").on(table.deletedAt)
+  })
+);
+
 export const cellValueLinks = pgTable(
   "cell_value_links",
   {
@@ -425,9 +449,8 @@ export const cellValueLinks = pgTable(
     sourceFieldId: uuid("source_field_id")
       .notNull()
       .references(() => fields.id, { onDelete: "cascade" }),
-    targetRowId: uuid("target_row_id")
-      .notNull()
-      .references(() => rows.id, { onDelete: "restrict" }),
+    targetRowId: uuid("target_row_id").references(() => rows.id, { onDelete: "restrict" }),
+    targetSourceId: uuid("target_source_id").references(() => sources.id, { onDelete: "restrict" }),
     ordinal: integer("ordinal").notNull().default(0),
     createdBy: uuid("created_by").references(() => users.id),
     ...timestamps
@@ -435,7 +458,13 @@ export const cellValueLinks = pgTable(
   (table) => ({
     sourceIdx: index("cell_value_links_source_idx").on(table.sourceRowId, table.sourceFieldId),
     targetIdx: index("cell_value_links_target_idx").on(table.targetRowId),
-    uniqueOrdinal: uniqueIndex("cell_value_links_source_target_ordinal_unique").on(table.sourceRowId, table.sourceFieldId, table.targetRowId, table.ordinal)
+    targetSourceIdx: index("cell_value_links_target_source_idx").on(table.targetSourceId),
+    uniqueOrdinal: uniqueIndex("cell_value_links_source_target_ordinal_unique")
+      .on(table.sourceRowId, table.sourceFieldId, table.targetRowId, table.ordinal)
+      .where(sql`${table.targetRowId} is not null`),
+    uniqueSourceOrdinal: uniqueIndex("cell_value_links_source_target_source_ordinal_unique")
+      .on(table.sourceRowId, table.sourceFieldId, table.targetSourceId, table.ordinal)
+      .where(sql`${table.targetSourceId} is not null`)
   })
 );
 

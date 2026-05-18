@@ -90,20 +90,42 @@ claude mcp add edf-saber --transport http http://localhost:3000/api/mcp \
 ### Fields (columns)
 
 - `create_field` — add a column. `options` for enum-family types,
-  `bindings` for reference-family types.
+  `bindings` for reference-family types. Each binding can carry
+  `displayFieldId` (which target column to render in chips/picker, defaults to
+  the ID field) and `allowSources` (when true, the picker also lists uploaded
+  sources from the global library alongside row targets).
 - `update_field` — change label, description, required, unique, editable,
   options, or bindings.
 - `archive_field` — hide a field without deleting row data.
 - `reorder_fields` — reorder columns within a sheet.
 - `list_reference_targets_for_field` — list rows valid as targets for a
-  reference field (respects bindings).
+  reference field (respects bindings). When any binding has `allowSources`,
+  sources are mixed in with `kind: "source"`.
 
 ### Rows and cells
 
 - `create_row` — insert a row, optionally pre-filling cells.
 - `delete_row` — soft-delete a row.
-- `set_cell_value` — update one cell. Reference fields take row UUIDs; enum
-  multi-fields take arrays; dates take ISO strings.
+- `set_cell_value` — update one cell. Reference fields accept either bare row
+  UUIDs (legacy shape) or arrays of `{ kind: "row" | "source", id: uuid }` so a
+  single cell can mix row links and source links when the binding allows it.
+  Enum multi-fields take arrays; dates take ISO strings.
+
+### Sources
+
+- `list_sources` — list uploaded sources (PDF/DOCX/MD/TXT) in the global source
+  library. Optional `q` filters by filename substring.
+- `get_source` — metadata for one source: filename, mime type, size, sha256,
+  uploader, timestamps.
+- `create_source` — upload a file. Provide one of `contentBase64` (for binary
+  formats like PDF/DOCX) or `contentText` (for MD/TXT). The filename's
+  extension determines the stored MIME type. Max 50 MB. Sources are content-
+  addressed by sha256 — re-uploading identical bytes returns the existing row
+  without duplicating storage.
+- `delete_source` — soft-delete a source. Fails if any cell still references
+  it; clear the references first via `set_cell_value`.
+- `download_source` — return a source's bytes. Text formats come back as
+  `contentText` (utf8); binary formats come back as `contentBase64`.
 
 ### Snapshots and diff
 

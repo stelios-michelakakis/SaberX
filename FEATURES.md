@@ -37,7 +37,19 @@ EDF SABER is a database-native engineering document management platform for stru
 - Rows can reference rows from the same document or, in later phases, other documents.
 - Single-reference and multi-reference fields store immutable row UUID links.
 - Reference rules can constrain which sheets and ID-bearing rows are valid targets.
+- Reference fields can optionally include uploaded sources as valid targets alongside rows, configured per binding with the `Include sources` toggle in the schema.
+- Each reference binding can specify a `display field` so the chip in the grid and the picker entry render the target's chosen column value instead of its visible ID.
 - Deletion of referenced rows is blocked by default to prevent silent data corruption.
+
+## Source Library
+
+- A global, tenant-wide library of uploaded files separate from per-document data.
+- Supported formats: PDF, DOCX, Markdown, and plain text. Files are limited to 50 MB each.
+- Files are stored content-addressed by SHA-256: uploading the same bytes twice does not duplicate storage and reuses the existing entry.
+- Source metadata (filename, MIME type, size, SHA-256, uploader, description, timestamps, soft delete) lives in the relational schema and is audit-tracked.
+- Any reference cell can target a source when its field's binding has `allow_sources` enabled; source links and row links coexist in the same cell.
+- Sources can be previewed inline (PDF via the browser viewer; MD and TXT as text) and downloaded.
+- Deletion of a source is blocked while any cell still references it; clearing the references first is required.
 
 ## Consistency And Impact Control
 

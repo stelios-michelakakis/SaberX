@@ -43,7 +43,7 @@ type FieldRow = {
   editable: boolean;
   isIdField: boolean;
   options: { label: string; value: string }[];
-  bindings: { allowedSheetId: string; allowSelfReference: boolean; displayFieldId?: string | null }[];
+  bindings: { allowedSheetId: string; allowSelfReference: boolean; displayFieldId?: string | null; allowSources?: boolean }[];
 };
 
 export function SchemaClient({
@@ -462,7 +462,8 @@ function EditFieldRow({
       allowedSheetId: b.allowedSheetId,
       allowSelfReference: b.allowSelfReference,
       displayFieldId: b.displayFieldId ?? null
-    }))
+    })),
+    allowSources: field.bindings.some((b) => b.allowSources === true)
   });
   const [saving, setSaving] = useState(false);
 
@@ -479,7 +480,8 @@ function EditFieldRow({
         allowedSheetId: b.allowedSheetId,
         allowSelfReference: b.allowSelfReference,
         displayFieldId: b.displayFieldId ?? null
-      }))
+      })),
+      allowSources: field.bindings.some((b) => b.allowSources === true)
     });
   }, [field.id]);
 

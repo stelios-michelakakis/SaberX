@@ -104,22 +104,6 @@ export function Topbar({
     }
   };
 
-  const onNewDocument = async () => {
-    const res = await fetch("/api/documents", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Untitled document" })
-    });
-    if (!res.ok) {
-      const detail = await res.json().catch(() => ({}));
-      toast.error("Failed to create document", { detail: detail.error });
-      return;
-    }
-    const data: { document: { id: string } } = await res.json();
-    router.push(`/dashboard/documents/${data.document.id}?renameTitle=1`);
-    router.refresh();
-  };
-
   return (
     <div
       style={{
@@ -270,15 +254,6 @@ export function Topbar({
             <Icon name="upload" size={12} />
           )}
           {importing ? "Importing…" : "Import"}
-        </button>
-        <button
-          className="sx-btn sx-btn-primary sx-btn-sm"
-          onClick={onNewDocument}
-          type="button"
-          data-tour="topbar-new-doc"
-        >
-          <Icon name="plus" size={12} />
-          New document
         </button>
       </div>
     </div>

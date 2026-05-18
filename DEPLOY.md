@@ -115,7 +115,10 @@ curl -I https://your-domain.example.com
 
 ## 6. Backups
 
-The `postgres_data` Docker volume holds all repository state. [`deploy/backup.sh`](deploy/backup.sh) streams a `pg_dump` to `/var/backups/edfsaber/` with 7-day rotation.
+Two volumes hold persistent state:
+
+- **`postgres_data`** — the database (all repository metadata, audit log, search index, etc.). [`deploy/backup.sh`](deploy/backup.sh) streams a `pg_dump` to `/var/backups/edfsaber/` with 7-day rotation.
+- **`source_files`** — uploaded source documents (PDF/DOCX/MD/TXT). Files are content-addressed under `/app/var/sources/<aa>/<bb>/<sha256>.<ext>`. The DB has metadata rows in `sources` that reference these files; if you back up Postgres without the volume, those references dangle.
 
 ```bash
 sudo crontab -e
@@ -130,7 +133,16 @@ sudo /opt/edf-saber/deploy/backup.sh
 ls -lh /var/backups/edfsaber
 ```
 
-Periodically `scp` the dumps off-box (or rclone them to S3/B2). **A backup you've never restored isn't a backup** — practise restoring at least once:
+For the source files volume, snapshot it alongside the SQL dump — a tar of the mount point is fine:
+
+```bash
+docker run --rm -v edf-saber_source_files:/data -v /var/backups/edfsaber:/out \
+  alpine tar czf /out/sources-$(date +%F).tgz -C /data .
+```
+
+(The compose project name prefix may differ — `docker volume ls | grep source_files` to confirm.)
+
+Periodically `scp` the dumps + the source tarball off-box (or rclone them to S3/B2). **A backup you've never restored isn't a backup** — practise restoring at least once:
 
 ```bash
 zcat /var/backups/edfsaber/edfsaber-YYYY-MM-DD-HHMM.sql.gz \

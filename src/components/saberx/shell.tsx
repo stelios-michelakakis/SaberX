@@ -10,6 +10,7 @@ import { ToastProvider } from "./toast";
 const ROUTE_LABELS: Record<string, string> = {
   "": "Documents",
   documents: "Documents",
+  sources: "Sources",
   schema: "Schema",
   trace: "Trace links",
   snapshots: "Snapshots",
@@ -19,13 +20,17 @@ const ROUTE_LABELS: Record<string, string> = {
   admin: "Administration"
 };
 
-function buildBreadcrumbs(pathname: string): string[] {
+function buildBreadcrumbs(
+  pathname: string,
+  titles: Record<string, string>
+): string[] {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length <= 1) return ["Documents"];
   const tail = parts.slice(1);
   const crumbs: string[] = [];
   for (const seg of tail) {
     if (ROUTE_LABELS[seg]) crumbs.push(ROUTE_LABELS[seg]);
+    else if (titles[seg]) crumbs.push(titles[seg]);
     else if (seg.length > 14) crumbs.push(seg.slice(0, 8) + "…");
     else crumbs.push(seg);
   }
@@ -37,19 +42,27 @@ export function Shell({
   user,
   integrityCount,
   documents,
+  sources,
   tutorialSeen
 }: {
   children: ReactNode;
   user: { name: string; role: string };
   integrityCount: number;
   documents: { id: string; title: string }[];
+  sources: { id: string; title: string }[];
   tutorialSeen: boolean;
 }) {
   const { tweaks } = useTweaks();
   const dark = tweaks.theme === "dark";
   const accent = accentVars(tweaks.accent, dark);
   const pathname = usePathname() ?? "/dashboard";
-  const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
+  const titles = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of documents) map[d.id] = d.title || "Untitled document";
+    for (const s of sources) map[s.id] = s.title;
+    return map;
+  }, [documents, sources]);
+  const breadcrumbs = useMemo(() => buildBreadcrumbs(pathname, titles), [pathname, titles]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -74,7 +87,7 @@ export function Shell({
       }}
     >
       <ToastProvider>
-        <Sidebar user={user} integrityCount={integrityCount} documents={documents} />
+        <Sidebar user={user} integrityCount={integrityCount} documents={documents} sources={sources} />
         <div
           style={{
             flex: 1,

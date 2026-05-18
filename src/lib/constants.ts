@@ -81,7 +81,10 @@ export const ACTION_TYPES = [
   "RENUMBER_APPLY",
   "GLOSSARY_REFRESH",
   "INTEGRITY_WARNING",
-  "INTEGRITY_ERROR"
+  "INTEGRITY_ERROR",
+  "SOURCE_CREATE",
+  "SOURCE_UPDATE",
+  "SOURCE_DELETE"
 ] as const;
 
 export type SheetKind = (typeof SHEET_KINDS)[number];

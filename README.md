@@ -17,13 +17,14 @@ Engineering teams typically manage these as a fleet of interdependent Excel file
 - **Document workspace.** Every document is created with the three reserved sections (`INSTRUCTIONS`, `GLOSSARY`, `OPEN ISSUES`) plus any user-defined sheets. Glossary entries are derived automatically from the schema.
 - **Type-aware grid.** Text, long-text, numbers, booleans, dates, single/multi enums, status, tags, URLs, and single/multi references — each cell has a type-appropriate editor (date picker, enum dropdown, reference picker constrained by sheet bindings).
 - **Trace links.** Cross-sheet/cross-document row references stored as UUIDs, with a graph view and incoming-reference lookup. Reference cells are blocked from deletion when something points at them.
+- **Sources.** A global library of uploaded files (PDF, DOCX, MD, TXT — up to 50 MB each). Files are content-addressed by SHA-256 so duplicate uploads dedupe automatically. Any reference field can opt in to allow source targets alongside row targets; chips render with a file icon and click through to an inline viewer (PDF preview, MD/TXT rendered as text).
 - **Snapshots & diff.** Named, immutable point-in-time captures of a document with added/changed/removed reporting.
 - **Excel I/O.** Import an `.xlsx` workbook as a new document with inferred field types; export any document back to a deterministic `.xlsx`.
 - **Search.** Full-text + trigram across documents, sheets, fields, rows, glossary, and open issues. Optional 1-hop relation expansion.
 - **Audit log.** Every meaningful action — schema changes, cell edits, imports/exports, snapshots, security events — stored with actor, timestamp, before/after, diff, and transaction id. Filterable by actor / action / document.
 - **Undo.** ⌘Z / Ctrl+Z reverses the user's last reversible action (row create/delete, cell update, document delete).
 - **Auth.** No public registration. Invitation-only onboarding with single-use hashed tokens, Argon2id password hashing, forced first-login password change, and role-based authorization (Admin / Editor / Reviewer).
-- **MCP server.** A `/api/mcp` endpoint speaks Model Context Protocol over Streamable HTTP, with 34 tools covering the same surface area as the UI. Tokens are minted per-user from the profile page and inherit that user's role. See **[MCP.md](MCP.md)**.
+- **MCP server.** A `/api/mcp` endpoint speaks Model Context Protocol over Streamable HTTP with tools covering the same surface area as the UI (documents, sheets, fields, rows, cells, snapshots, sources, search, audit). Tokens are minted per-user from the profile page and inherit that user's role. See **[MCP.md](MCP.md)**.
 
 For the full product spec, see **[FEATURES.md](FEATURES.md)**.
 

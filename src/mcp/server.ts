@@ -29,6 +29,13 @@ import {
   updateSheet
 } from "@/services/repository";
 import { undoLastAction, NothingToUndoError } from "@/services/undo";
+import {
+  createSource as createSourceService,
+  deleteSource as deleteSourceService,
+  getSource as getSourceService,
+  getSourceForDownload as getSourceForDownloadService,
+  listSources as listSourcesService
+} from "@/services/sources";
 import { db } from "@/db";
 import {
   auditEvents,
@@ -132,6 +139,7 @@ export function buildMcpServer(user: ApiUser): McpServer {
   registerRowAndCellTools(server, ctx);
   registerSnapshotTools(server, ctx);
   registerInspectionTools(server, ctx);
+  registerSourceTools(server, ctx);
 
   return server;
 }
@@ -393,7 +401,7 @@ function registerFieldTools(server: McpServer, { user }: ActorContext) {
     "create_field",
     {
       description:
-        "Add a field (column) to a sheet. For enum/status/tag_list pass `options`. For single_reference / multi_reference pass `bindings` to restrict which sheets are valid targets (empty array = allow all in document).",
+        "Add a field (column) to a sheet. For enum/status/tag_list pass `options`. For single_reference / multi_reference pass `bindings` to restrict which sheets are valid targets (empty array = allow all sheets in this document). Each binding: `allowedSheetId` (UUID, or null for a sources-only binding), optional `displayFieldId` to pick which field's value is shown in reference chips for that target (defaults to the ID field), `allowSelfReference`, and `allowSources` to also accept uploaded sources as targets.",
       inputSchema: {
         sheetId: z.string().uuid(),
         label: z.string().min(1).max(160),
@@ -406,8 +414,10 @@ function registerFieldTools(server: McpServer, { user }: ActorContext) {
         bindings: z
           .array(
             z.object({
-              allowedSheetId: z.string().uuid(),
-              allowSelfReference: z.boolean().default(false)
+              allowedSheetId: z.string().uuid().nullable(),
+              allowSelfReference: z.boolean().default(false),
+              displayFieldId: z.string().uuid().nullable().optional(),
+              allowSources: z.boolean().default(false)
             })
           )
           .optional()
@@ -434,7 +444,7 @@ function registerFieldTools(server: McpServer, { user }: ActorContext) {
     "update_field",
     {
       description:
-        "Edit a field's metadata. Field type cannot be changed. Pass `options` to replace the enum option list, `bindings` to replace reference target restrictions.",
+        "Edit a field's metadata. Field type cannot be changed. Pass `options` to replace the enum option list, `bindings` to replace reference target restrictions (see create_field for binding shape — including null `allowedSheetId` plus `allowSources: true` for a sources-only binding, and optional `displayFieldId` per target).",
       inputSchema: {
         fieldId: z.string().uuid(),
         label: z.string().min(1).max(160).optional(),
@@ -446,8 +456,10 @@ function registerFieldTools(server: McpServer, { user }: ActorContext) {
         bindings: z
           .array(
             z.object({
-              allowedSheetId: z.string().uuid(),
-              allowSelfReference: z.boolean().default(false)
+              allowedSheetId: z.string().uuid().nullable(),
+              allowSelfReference: z.boolean().default(false),
+              displayFieldId: z.string().uuid().nullable().optional(),
+              allowSources: z.boolean().default(false)
             })
           )
           .optional()
@@ -831,7 +843,7 @@ function registerInspectionTools(server: McpServer, { user }: ActorContext) {
             new Set(
               links
                 .flatMap((l) => [l.source, l.target])
-                .filter((id) => !matchedRowIds.includes(id))
+                .filter((id): id is string => Boolean(id) && !matchedRowIds.includes(id as string))
             )
           );
           if (expandedIds.length > 0) {
@@ -960,7 +972,11 @@ function registerInspectionTools(server: McpServer, { user }: ActorContext) {
       if (rawLinks.length === 0) return jsonText({ count: 0, links: [] });
 
       const rowIds = Array.from(
-        new Set(rawLinks.flatMap((l) => [l.sourceRowId, l.targetRowId]))
+        new Set(
+          rawLinks
+            .flatMap((l) => [l.sourceRowId, l.targetRowId])
+            .filter((id): id is string => Boolean(id))
+        )
       );
       const fieldIds = Array.from(new Set(rawLinks.map((l) => l.sourceFieldId)));
 
@@ -1015,6 +1031,9 @@ function registerInspectionTools(server: McpServer, { user }: ActorContext) {
 
       const enriched = rawLinks
         .map((l) => {
+          // Source links (l.targetSourceId set, l.targetRowId null) are skipped
+          // by this MCP tool — it surfaces row-to-row trace links only.
+          if (!l.targetRowId) return null;
           const src = rowMap.get(l.sourceRowId);
           const tgt = rowMap.get(l.targetRowId);
           if (!src || !tgt) return null;
@@ -1084,6 +1103,94 @@ function registerInspectionTools(server: McpServer, { user }: ActorContext) {
     async ({ operation, entityId }) => {
       const impact = await impactAnalysis(operation, entityId);
       return jsonText(impact);
+    }
+  );
+}
+
+function registerSourceTools(server: McpServer, { user }: ActorContext) {
+  server.registerTool(
+    "list_sources",
+    {
+      description:
+        "List uploaded sources (PDF/DOCX/MD/TXT) from the global source library. Filter by filename substring with `q`. Sources can be referenced from reference cells when the field's binding has allow_sources=true.",
+      inputSchema: {
+        q: z.string().max(300).optional()
+      }
+    },
+    async ({ q }) => {
+      const list = await listSourcesService({ q });
+      return jsonText({ count: list.length, sources: list });
+    }
+  );
+
+  server.registerTool(
+    "get_source",
+    {
+      description:
+        "Fetch metadata for a single source (filename, mime, size, sha256, uploader, timestamps). Use download_source for the bytes.",
+      inputSchema: { sourceId: z.string().uuid() }
+    },
+    async ({ sourceId }) => {
+      const source = await getSourceService(sourceId);
+      if (!source) return jsonError(`Source ${sourceId} not found.`);
+      return jsonText({ source });
+    }
+  );
+
+  server.registerTool(
+    "create_source",
+    {
+      description:
+        "Upload a source file. Provide either utf8 text content (for MD/TXT) or base64-encoded bytes (for PDF/DOCX). Filename's extension determines the type. Max 50 MB. Returns the created source; dedupes by sha256 when the same bytes already exist.",
+      inputSchema: {
+        filename: z.string().min(1).max(320),
+        contentBase64: z.string().optional(),
+        contentText: z.string().optional()
+      }
+    },
+    async ({ filename, contentBase64, contentText }) => {
+      assertCanMutate(user);
+      if (!contentBase64 && contentText == null) {
+        return jsonError("Provide contentBase64 or contentText.");
+      }
+      const buffer = contentBase64
+        ? Buffer.from(contentBase64, "base64")
+        : Buffer.from(contentText ?? "", "utf8");
+      const source = await createSourceService(user, { filename, buffer });
+      return jsonText({ source });
+    }
+  );
+
+  server.registerTool(
+    "delete_source",
+    {
+      description:
+        "Soft-delete a source. Fails if any cell currently references it — drop those references first.",
+      inputSchema: { sourceId: z.string().uuid() }
+    },
+    async ({ sourceId }) => {
+      assertCanMutate(user);
+      await deleteSourceService(user, sourceId);
+      return jsonText({ ok: true });
+    }
+  );
+
+  server.registerTool(
+    "download_source",
+    {
+      description:
+        "Return a source's bytes. PDF/DOCX come back as base64; MD/TXT come back as utf8 text. Use the appropriate field based on the source's mime_type.",
+      inputSchema: { sourceId: z.string().uuid() }
+    },
+    async ({ sourceId }) => {
+      const result = await getSourceForDownloadService(sourceId);
+      if (!result) return jsonError(`Source ${sourceId} not found.`);
+      const isText = result.vm.mimeType.startsWith("text/");
+      return jsonText({
+        source: result.vm,
+        contentText: isText ? result.buffer.toString("utf8") : undefined,
+        contentBase64: isText ? undefined : result.buffer.toString("base64")
+      });
     }
   );
 }

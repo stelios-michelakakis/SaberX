@@ -383,7 +383,7 @@ export function DocumentClient({
   const isInstructions = activeSheet?.sheetKind === "instructions";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, minWidth: 0, overflowX: "hidden" }}>
       <div
         style={{
           padding: "20px 28px 16px",
@@ -930,17 +930,23 @@ function Grid({
                     type="button"
                     data-tour="doc-add-column"
                     onClick={onAddColumn}
-                    className="sx-btn sx-btn-ghost sx-btn-sm"
+                    title="Add a column to this sheet"
                     style={{
                       width: "100%",
                       padding: "4px 8px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
                       justifyContent: "flex-start",
                       color: "var(--ink-3)",
                       fontSize: 11,
                       letterSpacing: "0.04em",
-                      textTransform: "uppercase"
+                      textTransform: "uppercase",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      font: "inherit"
                     }}
-                    title="Add a column to this sheet"
                   >
                     <Icon name="plus" size={12} /> Add column
                   </button>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 import { Avatar } from "./avatar";
 import { Icon } from "./icon";
 import { useTweaks } from "./theme-provider";
@@ -19,6 +20,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/dashboard", label: "Documents", icon: "docs", group: "main" },
+  { href: "/dashboard/sources", label: "Sources", icon: "folder", group: "main" },
   { href: "/dashboard/search", label: "Search", icon: "search", group: "tools" },
   { href: "/dashboard/audit", label: "Audit log", icon: "audit", group: "tools" },
   { href: "/dashboard/integrity", label: "Integrity", icon: "shield", group: "tools" },
@@ -32,14 +34,17 @@ type Props = {
   programName?: string;
   integrityCount?: number;
   documents?: { id: string; title: string }[];
+  sources?: { id: string; title: string }[];
 };
 
-export function Sidebar({ user, integrityCount = 0, documents = [] }: Props) {
+export function Sidebar({ user, integrityCount = 0, documents = [], sources = [] }: Props) {
   const { tweaks } = useTweaks();
   const collapsed = tweaks.sidebarCollapsed;
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const W = collapsed ? 56 : 240;
+  const [documentsOpen, setDocumentsOpen] = useState(true);
+  const [sourcesOpen, setSourcesOpen] = useState(true);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -60,6 +65,7 @@ export function Sidebar({ user, integrityCount = 0, documents = [] }: Props) {
 
   const isActive = (item: NavItem) => {
     if (item.href === "/dashboard") return pathname === "/dashboard";
+    if (item.href === "/dashboard/sources") return pathname === "/dashboard/sources";
     if (item.matchPrefix) return pathname.startsWith(item.href);
     return pathname === item.href || pathname.startsWith(item.href + "/");
   };
@@ -139,65 +145,59 @@ export function Sidebar({ user, integrityCount = 0, documents = [] }: Props) {
         }}
       >
         {!collapsed && <SectionLabel label="Workspace" />}
-        {NAV.filter((n) => n.group === "main").map((n) =>
-          n.href === "/dashboard" ? (
-            <DocumentsRow
-              key={n.href}
-              item={n}
-              active={isActive(n)}
-              collapsed={collapsed}
-              onAdd={handleNewDocument}
-            />
-          ) : (
-            <NavLink key={n.href} item={n} active={isActive(n)} collapsed={collapsed} />
-          )
-        )}
-        {documents.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {documents.map((d) => {
-              const href = `/dashboard/documents/${d.id}`;
-              const active = pathname === href || pathname.startsWith(href + "/");
-              return (
-                <Link
-                  key={d.id}
-                  href={href}
-                  title={collapsed ? d.title : undefined}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: collapsed ? "6px 8px" : "5px 8px 5px 22px",
-                    borderRadius: 6,
-                    background: active ? "var(--accent-soft)" : "transparent",
-                    color: active ? "var(--ink)" : "var(--ink-2)",
-                    textDecoration: "none",
-                    fontSize: 12.5,
-                    fontWeight: active ? 500 : 400,
-                    justifyContent: collapsed ? "center" : "flex-start"
-                  }}
-                >
-                  <Icon
-                    name="doc"
-                    size={12}
-                    style={{ color: active ? "var(--ink)" : "var(--ink-4)", flex: "none" }}
+        {NAV.filter((n) => n.group === "main").map((n) => {
+          if (n.href === "/dashboard") {
+            return (
+              <div key={n.href} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <ExpandableNavRow
+                  tour="nav-documents"
+                  item={n}
+                  active={isActive(n)}
+                  collapsed={collapsed}
+                  open={documentsOpen}
+                  onToggle={() => setDocumentsOpen((v) => !v)}
+                  onAdd={handleNewDocument}
+                  addLabel="New document"
+                />
+                {!collapsed && documentsOpen && documents.length > 0 && (
+                  <ChildList
+                    items={documents}
+                    pathname={pathname}
+                    hrefBase="/dashboard/documents"
+                    iconName="doc"
+                    collapsed={collapsed}
                   />
-                  {!collapsed && (
-                    <span
-                      style={{
-                        flex: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
-                      }}
-                    >
-                      {d.title || "Untitled document"}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        )}
+                )}
+              </div>
+            );
+          }
+          if (n.href === "/dashboard/sources") {
+            return (
+              <div key={n.href} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <ExpandableNavRow
+                  tour="nav-sources"
+                  item={n}
+                  active={isActive(n)}
+                  collapsed={collapsed}
+                  open={sourcesOpen}
+                  onToggle={() => setSourcesOpen((v) => !v)}
+                  onAdd={() => router.push("/dashboard/sources?upload=1")}
+                  addLabel="Upload source"
+                />
+                {!collapsed && sourcesOpen && sources.length > 0 && (
+                  <ChildList
+                    items={sources}
+                    pathname={pathname}
+                    hrefBase="/dashboard/sources"
+                    iconName="doc"
+                    collapsed={collapsed}
+                  />
+                )}
+              </div>
+            );
+          }
+          return <NavLink key={n.href} item={n} active={isActive(n)} collapsed={collapsed} />;
+        })}
         {!collapsed && <SectionLabel label="Tools" pad />}
         {collapsed && <div style={{ height: 1, background: "var(--line)", margin: "8px 6px" }} />}
         {NAV.filter((n) => n.group === "tools").map((n) => (
@@ -277,27 +277,50 @@ function SectionLabel({ label, pad }: { label: string; pad?: boolean }) {
   );
 }
 
-function DocumentsRow({
+function ExpandableNavRow({
   item,
   active,
   collapsed,
-  onAdd
+  open,
+  onToggle,
+  onAdd,
+  addLabel,
+  tour
 }: {
   item: NavItem;
   active: boolean;
   collapsed: boolean;
+  open: boolean;
+  onToggle: () => void;
   onAdd: () => void;
+  addLabel: string;
+  tour: string;
 }) {
   return (
     <div
-      data-tour="nav-documents"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-        padding: collapsed ? 0 : "0 0 0 0"
-      }}
+      data-tour={tour}
+      style={{ display: "flex", alignItems: "center", gap: 4 }}
     >
+      {!collapsed && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={open ? `Collapse ${item.label}` : `Expand ${item.label}`}
+          aria-expanded={open}
+          className="sx-btn sx-btn-ghost sx-btn-sm"
+          style={{
+            padding: 2,
+            width: 18,
+            height: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flex: "none"
+          }}
+        >
+          <Icon name={open ? "chevronD" : "chevronR"} size={12} />
+        </button>
+      )}
       <Link
         href={item.href}
         title={collapsed ? item.label : undefined}
@@ -316,25 +339,85 @@ function DocumentsRow({
           justifyContent: collapsed ? "center" : "flex-start"
         }}
       >
-        <Icon
-          name={item.icon}
-          size={12}
-          style={{ color: active ? "var(--ink)" : "var(--ink-3)", flex: "none" }}
-        />
+        {collapsed && (
+          <Icon
+            name={item.icon}
+            size={12}
+            style={{ color: active ? "var(--ink)" : "var(--ink-3)", flex: "none" }}
+          />
+        )}
         {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
       </Link>
       {!collapsed && (
         <button
           type="button"
           onClick={onAdd}
-          aria-label="New document"
-          title="New document"
+          aria-label={addLabel}
+          title={addLabel}
           className="sx-btn sx-btn-ghost sx-btn-sm"
           style={{ padding: 4 }}
         >
           <Icon name="plus" size={12} />
         </button>
       )}
+    </div>
+  );
+}
+
+function ChildList({
+  items,
+  pathname,
+  hrefBase,
+  iconName,
+  collapsed
+}: {
+  items: { id: string; title: string }[];
+  pathname: string;
+  hrefBase: string;
+  iconName: string;
+  collapsed: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {items.map((d) => {
+        const href = `${hrefBase}/${d.id}`;
+        const active = pathname === href || pathname.startsWith(href + "/");
+        return (
+          <Link
+            key={d.id}
+            href={href}
+            title={collapsed ? d.title : undefined}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "5px 8px 5px 32px",
+              borderRadius: 6,
+              background: active ? "var(--accent-soft)" : "transparent",
+              color: active ? "var(--ink)" : "var(--ink-2)",
+              textDecoration: "none",
+              fontSize: 12.5,
+              fontWeight: active ? 500 : 400
+            }}
+          >
+            <Icon
+              name={iconName}
+              size={12}
+              style={{ color: active ? "var(--ink)" : "var(--ink-4)", flex: "none" }}
+            />
+            <span
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap"
+              }}
+            >
+              {d.title || "Untitled"}
+            </span>
+          </Link>
+        );
+      })}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   sheets,
   snapshotItems,
   snapshots,
+  sources,
   tombstones,
   type Field,
   type Row,
@@ -522,7 +523,7 @@ export async function createField(
     editable?: boolean;
     options?: string[];
     validation?: Record<string, unknown>;
-    bindings?: { allowedSheetId: string; allowSelfReference?: boolean; displayFieldId?: string | null }[];
+    bindings?: { allowedSheetId: string | null; allowSelfReference?: boolean; displayFieldId?: string | null; allowSources?: boolean }[];
   }
 ) {
   if (!FIELD_TYPES.includes(input.type)) throw new Error("Unsupported field type");
@@ -556,31 +557,48 @@ export async function createField(
     }
     const isReference = input.type === "single_reference" || input.type === "multi_reference";
     if (isReference && input.bindings && input.bindings.length > 0) {
-      const validSheets = await tx
-        .select({ id: sheets.id })
-        .from(sheets)
-        .where(
-          and(
-            eq(sheets.documentId, sheet.documentId),
-            isNull(sheets.deletedAt),
-            inArray(
-              sheets.id,
-              input.bindings.map((b) => b.allowedSheetId)
+      const sheetBound = input.bindings.filter(
+        (b): b is typeof b & { allowedSheetId: string } => b.allowedSheetId !== null
+      );
+      const sourceOnly = input.bindings.filter((b) => b.allowedSheetId === null && b.allowSources);
+      let acceptedSheetBound: typeof sheetBound = [];
+      if (sheetBound.length > 0) {
+        const validSheets = await tx
+          .select({ id: sheets.id })
+          .from(sheets)
+          .where(
+            and(
+              eq(sheets.documentId, sheet.documentId),
+              isNull(sheets.deletedAt),
+              inArray(
+                sheets.id,
+                sheetBound.map((b) => b.allowedSheetId)
+              )
             )
-          )
-        );
-      const validIds = new Set(validSheets.map((s) => s.id));
-      const accepted = input.bindings.filter((b) => validIds.has(b.allowedSheetId));
-      if (accepted.length > 0) {
-        await tx.insert(referenceBindings).values(
-          accepted.map((b) => ({
-            fieldId: field.id,
-            allowedDocumentId: sheet.documentId,
-            allowedSheetId: b.allowedSheetId,
-            allowSelfReference: b.allowSelfReference ?? false,
-            displayFieldId: b.displayFieldId ?? null
-          }))
-        );
+          );
+        const validIds = new Set(validSheets.map((s) => s.id));
+        acceptedSheetBound = sheetBound.filter((b) => validIds.has(b.allowedSheetId));
+      }
+      const bindingRows = [
+        ...acceptedSheetBound.map((b) => ({
+          fieldId: field.id,
+          allowedDocumentId: sheet.documentId,
+          allowedSheetId: b.allowedSheetId,
+          allowSelfReference: b.allowSelfReference ?? false,
+          displayFieldId: b.displayFieldId ?? null,
+          allowSources: b.allowSources ?? false
+        })),
+        ...sourceOnly.map(() => ({
+          fieldId: field.id,
+          allowedDocumentId: sheet.documentId,
+          allowedSheetId: null,
+          allowSelfReference: false,
+          displayFieldId: null,
+          allowSources: true
+        }))
+      ];
+      if (bindingRows.length > 0) {
+        await tx.insert(referenceBindings).values(bindingRows);
       }
     }
     await writeAudit(
@@ -618,7 +636,7 @@ export async function updateField(
     options: string[];
     validation: Record<string, unknown>;
     archived: boolean;
-    bindings: { allowedSheetId: string; allowSelfReference?: boolean; displayFieldId?: string | null }[];
+    bindings: { allowedSheetId: string | null; allowSelfReference?: boolean; displayFieldId?: string | null; allowSources?: boolean }[];
   }>
 ) {
   const txId = randomUUID();
@@ -664,31 +682,50 @@ export async function updateField(
     if (isReference && input.bindings !== undefined) {
       await tx.delete(referenceBindings).where(eq(referenceBindings.fieldId, fieldId));
       if (input.bindings.length > 0) {
-        const validSheets = await tx
-          .select({ id: sheets.id })
-          .from(sheets)
-          .where(
-            and(
-              eq(sheets.documentId, sheet.documentId),
-              isNull(sheets.deletedAt),
-              inArray(
-                sheets.id,
-                input.bindings.map((b) => b.allowedSheetId)
+        const sheetBound = input.bindings.filter(
+          (b): b is typeof b & { allowedSheetId: string } => b.allowedSheetId !== null
+        );
+        const sourceOnly = input.bindings.filter(
+          (b) => b.allowedSheetId === null && b.allowSources
+        );
+        let acceptedSheetBound: typeof sheetBound = [];
+        if (sheetBound.length > 0) {
+          const validSheets = await tx
+            .select({ id: sheets.id })
+            .from(sheets)
+            .where(
+              and(
+                eq(sheets.documentId, sheet.documentId),
+                isNull(sheets.deletedAt),
+                inArray(
+                  sheets.id,
+                  sheetBound.map((b) => b.allowedSheetId)
+                )
               )
-            )
-          );
-        const validIds = new Set(validSheets.map((s) => s.id));
-        const accepted = input.bindings.filter((b) => validIds.has(b.allowedSheetId));
-        if (accepted.length > 0) {
-          await tx.insert(referenceBindings).values(
-            accepted.map((b) => ({
-              fieldId,
-              allowedDocumentId: sheet.documentId,
-              allowedSheetId: b.allowedSheetId,
-              allowSelfReference: b.allowSelfReference ?? false,
-              displayFieldId: b.displayFieldId ?? null
-            }))
-          );
+            );
+          const validIds = new Set(validSheets.map((s) => s.id));
+          acceptedSheetBound = sheetBound.filter((b) => validIds.has(b.allowedSheetId));
+        }
+        const bindingRows = [
+          ...acceptedSheetBound.map((b) => ({
+            fieldId,
+            allowedDocumentId: sheet.documentId,
+            allowedSheetId: b.allowedSheetId,
+            allowSelfReference: b.allowSelfReference ?? false,
+            displayFieldId: b.displayFieldId ?? null,
+            allowSources: b.allowSources ?? false
+          })),
+          ...sourceOnly.map(() => ({
+            fieldId,
+            allowedDocumentId: sheet.documentId,
+            allowedSheetId: null,
+            allowSelfReference: false,
+            displayFieldId: null,
+            allowSources: true
+          }))
+        ];
+        if (bindingRows.length > 0) {
+          await tx.insert(referenceBindings).values(bindingRows);
         }
       }
     }
@@ -831,7 +868,8 @@ export async function getSheetGrid(sheetId: string) {
       .map((b) => ({
         allowedSheetId: b.allowedSheetId,
         allowSelfReference: b.allowSelfReference,
-        displayFieldId: b.displayFieldId
+        displayFieldId: b.displayFieldId,
+        allowSources: b.allowSources
       }))
   }));
 
@@ -849,14 +887,18 @@ export async function getSheetGrid(sheetId: string) {
           sourceRowId: cellValueLinks.sourceRowId,
           sourceFieldId: cellValueLinks.sourceFieldId,
           targetRowId: cellValueLinks.targetRowId,
+          targetSourceId: cellValueLinks.targetSourceId,
           ordinal: cellValueLinks.ordinal,
           targetVisibleId: rows.visibleId,
           targetSheetId: rows.sheetId,
-          targetSheetName: sheets.name
+          targetSheetName: sheets.name,
+          targetSourceFilename: sources.filename,
+          targetSourceMime: sources.mimeType
         })
         .from(cellValueLinks)
-        .innerJoin(rows, eq(rows.id, cellValueLinks.targetRowId))
-        .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+        .leftJoin(rows, eq(rows.id, cellValueLinks.targetRowId))
+        .leftJoin(sheets, eq(sheets.id, rows.sheetId))
+        .leftJoin(sources, eq(sources.id, cellValueLinks.targetSourceId))
         .where(inArray(cellValueLinks.sourceRowId, rowIds))
     : [];
 
@@ -872,6 +914,7 @@ export async function getSheetGrid(sheetId: string) {
     const needed: { rowId: string; fieldId: string }[] = [];
     const seen = new Set<string>();
     for (const link of linkCells) {
+      if (!link.targetRowId || !link.targetSheetId) continue;
       const df = displayMap.get(`${link.sourceFieldId}|${link.targetSheetId}`);
       if (!df) continue;
       const key = `${link.targetRowId}|${df}`;
@@ -921,16 +964,32 @@ export async function getSheetGrid(sheetId: string) {
           .filter((link) => link.sourceRowId === row.id && link.sourceFieldId === field.id)
           .sort((a, b) => a.ordinal - b.ordinal)
           .map((link) => {
+            if (link.targetSourceId) {
+              const filename = link.targetSourceFilename ?? "(missing)";
+              return {
+                id: link.targetSourceId,
+                kind: "source" as const,
+                label: filename,
+                display: filename,
+                visibleId: filename,
+                sheetId: null,
+                mimeType: link.targetSourceMime ?? null
+              };
+            }
             const visibleId = link.targetVisibleId ?? "(no ID)";
-            const df = displayMap.get(`${link.sourceFieldId}|${link.targetSheetId}`);
-            const dv = df ? displayPairs.get(`${link.targetRowId}|${df}`) : null;
+            const df = link.targetSheetId
+              ? displayMap.get(`${link.sourceFieldId}|${link.targetSheetId}`)
+              : undefined;
+            const dv = df && link.targetRowId ? displayPairs.get(`${link.targetRowId}|${df}`) : null;
             const display = dv && dv.trim().length > 0 ? dv : visibleId;
             return {
-              id: link.targetRowId,
-              label: `${display} - ${link.targetSheetName}`,
+              id: link.targetRowId ?? "",
+              kind: "row" as const,
+              label: `${display} - ${link.targetSheetName ?? ""}`,
               display,
               visibleId,
-              sheetId: link.targetSheetId
+              sheetId: link.targetSheetId,
+              mimeType: null
             };
           });
         if (links.length) cells[field.id] = links;
@@ -1030,15 +1089,24 @@ async function patchCellInternal(client: any, user: ActorUser, row: Row, field: 
   if (!field.editable) throw new Error(`${field.label} is read-only`);
   const sheet = sheetMaybe ?? (await client.select().from(sheets).where(eq(sheets.id, row.sheetId)).limit(1))[0];
   if (field.type === "single_reference" || field.type === "multi_reference") {
-    const ids = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
-    if (field.type === "single_reference" && ids.length > 1) throw new Error(`${field.label} accepts one reference`);
-    await validateReferenceTargets(client, sheet, field, ids);
+    const parsed = parseReferenceValue(value);
+    if (field.type === "single_reference" && parsed.length > 1) throw new Error(`${field.label} accepts one reference`);
+    await validateReferenceTargets(client, sheet, field, parsed);
     const before = await client.select().from(cellValueLinks).where(and(eq(cellValueLinks.sourceRowId, row.id), eq(cellValueLinks.sourceFieldId, field.id)));
     await client.delete(cellValueLinks).where(and(eq(cellValueLinks.sourceRowId, row.id), eq(cellValueLinks.sourceFieldId, field.id)));
-    if (ids.length) {
-      await client.insert(cellValueLinks).values(ids.map((targetRowId, ordinal) => ({ sourceRowId: row.id, sourceFieldId: field.id, targetRowId, ordinal, createdBy: user.userId })));
+    if (parsed.length) {
+      await client.insert(cellValueLinks).values(
+        parsed.map((target, ordinal) => ({
+          sourceRowId: row.id,
+          sourceFieldId: field.id,
+          targetRowId: target.kind === "row" ? target.id : null,
+          targetSourceId: target.kind === "source" ? target.id : null,
+          ordinal,
+          createdBy: user.userId
+        }))
+      );
     }
-    const after = ids;
+    const after = parsed;
     await writeAudit(
       {
         actor: actor(user),
@@ -1094,44 +1162,89 @@ async function patchCellInternal(client: any, user: ActorUser, row: Row, field: 
   return after;
 }
 
-async function validateReferenceTargets(client: any, sheet: Sheet, field: Field, targetIds: string[]) {
-  if (!targetIds.length) return;
-  const [sourceSheet] = await client.select().from(sheets).where(eq(sheets.id, field.sheetId)).limit(1);
-  const targets = await client
-    .select({ row: rows, sheet: sheets })
-    .from(rows)
-    .innerJoin(sheets, eq(sheets.id, rows.sheetId))
-    .where(and(inArray(rows.id, targetIds), isNull(rows.deletedAt), eq(sheets.documentId, sheet.documentId)));
-  if (targets.length !== targetIds.length) throw new Error("One or more references are invalid");
+type ReferenceTargetInput = { kind: "row"; id: string } | { kind: "source"; id: string };
 
-  // Honor per-field binding restrictions: when bindings exist, only target rows
-  // in an allowed sheet are permitted; self-reference is gated by allow_self_reference.
+function parseReferenceValue(value: unknown): ReferenceTargetInput[] {
+  const items: unknown[] = Array.isArray(value) ? value : value ? [value] : [];
+  const out: ReferenceTargetInput[] = [];
+  for (const raw of items) {
+    if (typeof raw === "string") {
+      if (raw.trim()) out.push({ kind: "row", id: raw });
+    } else if (raw && typeof raw === "object") {
+      const obj = raw as { kind?: string; id?: string; rowId?: string; sourceId?: string };
+      if (obj.kind === "source" && typeof obj.id === "string") {
+        out.push({ kind: "source", id: obj.id });
+      } else if (obj.kind === "row" && typeof obj.id === "string") {
+        out.push({ kind: "row", id: obj.id });
+      } else if (typeof obj.sourceId === "string") {
+        out.push({ kind: "source", id: obj.sourceId });
+      } else if (typeof obj.rowId === "string") {
+        out.push({ kind: "row", id: obj.rowId });
+      } else if (typeof obj.id === "string") {
+        // Fall back to row when kind isn't specified — matches legacy behavior.
+        out.push({ kind: "row", id: obj.id });
+      }
+    }
+  }
+  return out;
+}
+
+async function validateReferenceTargets(client: any, sheet: Sheet, field: Field, targets: ReferenceTargetInput[]) {
+  if (!targets.length) return;
+  const rowIds = targets.filter((t) => t.kind === "row").map((t) => t.id);
+  const sourceIds = targets.filter((t) => t.kind === "source").map((t) => t.id);
+
+  const [sourceSheet] = await client.select().from(sheets).where(eq(sheets.id, field.sheetId)).limit(1);
   const bindings = await client
     .select()
     .from(referenceBindings)
     .where(eq(referenceBindings.fieldId, field.id));
-  if (bindings.length > 0) {
-    const allowedSheetIds = new Set(
-      bindings
-        .map((b: { allowedSheetId: string | null }) => b.allowedSheetId)
-        .filter((id: string | null): id is string => Boolean(id))
-    );
-    const allowSelf = bindings.some((b: { allowSelfReference: boolean }) => b.allowSelfReference);
-    for (const target of targets as { row: Row; sheet: Sheet }[]) {
-      if (!allowedSheetIds.has(target.sheet.id)) {
-        throw new Error(
-          `${field.label} cannot reference ${target.row.visibleId ?? target.row.id}: target sheet "${target.sheet.name}" is not in the binding allowlist`
-        );
-      }
-      if (!allowSelf && target.sheet.id === field.sheetId) {
-        throw new Error(`${field.label} cannot reference rows in its own sheet`);
-      }
+  const allowSources = bindings.some((b: { allowSources: boolean }) => b.allowSources);
+
+  if (sourceIds.length > 0) {
+    if (bindings.length > 0 && !allowSources) {
+      throw new Error(`${field.label} is not configured to allow source references`);
+    }
+    const validSources = await client
+      .select({ id: sources.id })
+      .from(sources)
+      .where(and(inArray(sources.id, sourceIds), isNull(sources.deletedAt)));
+    if (validSources.length !== sourceIds.length) {
+      throw new Error("One or more source references are invalid");
     }
   }
 
-  if (sourceSheet?.sheetKind === "open_issues") {
-    const invalid = targets.some((target: { sheet: Sheet }) => target.sheet.sheetKind === "open_issues");
-    if (invalid) throw new Error("OPEN ISSUES references cannot target OPEN ISSUES rows");
+  if (rowIds.length > 0) {
+    const targetRows = await client
+      .select({ row: rows, sheet: sheets })
+      .from(rows)
+      .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+      .where(and(inArray(rows.id, rowIds), isNull(rows.deletedAt), eq(sheets.documentId, sheet.documentId)));
+    if (targetRows.length !== rowIds.length) throw new Error("One or more references are invalid");
+
+    if (bindings.length > 0) {
+      const allowedSheetIds = new Set(
+        bindings
+          .map((b: { allowedSheetId: string | null }) => b.allowedSheetId)
+          .filter((id: string | null): id is string => Boolean(id))
+      );
+      const allowSelf = bindings.some((b: { allowSelfReference: boolean }) => b.allowSelfReference);
+      for (const target of targetRows as { row: Row; sheet: Sheet }[]) {
+        if (!allowedSheetIds.has(target.sheet.id)) {
+          throw new Error(
+            `${field.label} cannot reference ${target.row.visibleId ?? target.row.id}: target sheet "${target.sheet.name}" is not in the binding allowlist`
+          );
+        }
+        if (!allowSelf && target.sheet.id === field.sheetId) {
+          throw new Error(`${field.label} cannot reference rows in its own sheet`);
+        }
+      }
+    }
+
+    if (sourceSheet?.sheetKind === "open_issues") {
+      const invalid = targetRows.some((target: { sheet: Sheet }) => target.sheet.sheetKind === "open_issues");
+      if (invalid) throw new Error("OPEN ISSUES references cannot target OPEN ISSUES rows");
+    }
   }
 }
 
@@ -1182,6 +1295,25 @@ export async function listReferenceTargetsForField(fieldId: string) {
   for (const b of fieldBindings) {
     if (b.allowedSheetId && b.displayFieldId) displayBySheet.set(b.allowedSheetId, b.displayFieldId);
   }
+  // When bindings exist and at least one has allow_sources, the picker also
+  // includes uploaded sources. When the field has no bindings configured
+  // (default = allow any sheet in this document), sources are NOT auto-included
+  // — the user has to opt in by checking "Include sources" on a binding.
+  const includeSources = fieldBindings.some((b) => b.allowSources);
+  const sourceCandidates = includeSources
+    ? await db
+        .select({
+          rowId: sources.id,
+          visibleId: sources.filename,
+          sheetId: sql<string | null>`null::uuid`,
+          sheetName: sql<string>`'Sources'`,
+          kind: sql<string>`'source'`,
+          mimeType: sources.mimeType
+        })
+        .from(sources)
+        .where(isNull(sources.deletedAt))
+        .orderBy(asc(sources.filename))
+    : [];
 
   const baseQuery = db
     .select({
@@ -1194,24 +1326,25 @@ export async function listReferenceTargetsForField(fieldId: string) {
     .innerJoin(sheets, eq(sheets.id, rows.sheetId))
     .innerJoin(fields, and(eq(fields.sheetId, sheets.id), eq(fields.isIdField, true)));
 
-  let targets;
+  let targets: { rowId: string; visibleId: string | null; sheetId: string; sheetName: string }[] = [];
   if (fieldBindings.length > 0) {
     const allowedSheetIds = fieldBindings
       .map((b) => b.allowedSheetId)
       .filter((id): id is string => Boolean(id));
     const allowSelf = fieldBindings.some((b) => b.allowSelfReference);
-    if (allowedSheetIds.length === 0) return [];
-    targets = await baseQuery
-      .where(
-        and(
-          eq(sheets.documentId, sheet.documentId),
-          isNull(rows.deletedAt),
-          isNull(sheets.deletedAt),
-          inArray(sheets.id, allowedSheetIds),
-          allowSelf ? sql`true` : sql`${sheets.id} <> ${field.sheetId}`
+    if (allowedSheetIds.length > 0) {
+      targets = await baseQuery
+        .where(
+          and(
+            eq(sheets.documentId, sheet.documentId),
+            isNull(rows.deletedAt),
+            isNull(sheets.deletedAt),
+            inArray(sheets.id, allowedSheetIds),
+            allowSelf ? sql`true` : sql`${sheets.id} <> ${field.sheetId}`
+          )
         )
-      )
-      .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
+        .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
+    }
   } else {
     targets = await baseQuery
       .where(
@@ -1226,7 +1359,21 @@ export async function listReferenceTargetsForField(fieldId: string) {
       .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
   }
 
-  return enrichTargetsWithDisplay(targets, displayBySheet);
+  const enrichedRows = (await enrichTargetsWithDisplay(targets, displayBySheet)).map((t) => ({
+    ...t,
+    kind: "row" as const,
+    mimeType: null as string | null
+  }));
+  const enrichedSources = sourceCandidates.map((s) => ({
+    rowId: s.rowId,
+    visibleId: s.visibleId,
+    sheetId: null as string | null,
+    sheetName: "Sources",
+    kind: "source" as const,
+    display: null as string | null,
+    mimeType: s.mimeType
+  }));
+  return [...enrichedRows, ...enrichedSources];
 }
 
 export async function listReferenceTargets(sheetId: string) {
@@ -1237,7 +1384,9 @@ export async function listReferenceTargets(sheetId: string) {
       rowId: rows.id,
       visibleId: rows.visibleId,
       sheetId: sheets.id,
-      sheetName: sheets.name
+      sheetName: sheets.name,
+      kind: sql<string>`'row'`,
+      mimeType: sql<string | null>`null::text`
     })
     .from(rows)
     .innerJoin(sheets, eq(sheets.id, rows.sheetId))

@@ -189,18 +189,6 @@ const STEPS: Step[] = [
     selector: "[data-tour='topbar-import']",
     placement: "bottom"
   },
-  {
-    title: "New document",
-    body: (
-      <>
-        Creates a fresh workbook — you're dropped straight into it to set the title and add
-        sheets.
-      </>
-    ),
-    view: "documents",
-    selector: "[data-tour='topbar-new-doc']",
-    placement: "bottom"
-  },
   // --- Sidebar ---
   {
     title: "Sidebar",
@@ -225,6 +213,22 @@ const STEPS: Step[] = [
     ),
     view: "documents",
     selector: "[data-tour='nav-documents']",
+    placement: "right"
+  },
+  {
+    title: "Sources",
+    body: (
+      <>
+        Upload PDF, DOCX, Markdown or plain-text files (up to 50 MB each) and reference them
+        from any cell. The <Icon name="plus" size={12} style={{ verticalAlign: "-1px" }} /> opens
+        the upload picker; the list view lets you preview, download or remove existing sources.
+        To use a source from a cell, configure a reference field with{" "}
+        <strong>Include sources</strong> in the schema tab — the picker then lists files
+        alongside row targets.
+      </>
+    ),
+    view: "documents",
+    selector: "[data-tour='nav-sources']",
     placement: "right"
   },
   // --- Documents page ---

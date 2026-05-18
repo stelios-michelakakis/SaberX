@@ -14,7 +14,11 @@ export type FieldFormValue = {
   unique: boolean;
   editable: boolean;
   options: string; // comma/newline-separated
-  bindings: { allowedSheetId: string; allowSelfReference: boolean; displayFieldId: string | null }[];
+  bindings: { allowedSheetId: string | null; allowSelfReference: boolean; displayFieldId: string | null }[];
+  // When true, the reference picker also lists uploaded sources alongside
+  // row targets. Stored on every binding row (allow_sources) so the picker
+  // can detect it from any single binding row at read time.
+  allowSources: boolean;
 };
 
 export const EMPTY_FIELD_VALUE: FieldFormValue = {
@@ -25,7 +29,8 @@ export const EMPTY_FIELD_VALUE: FieldFormValue = {
   unique: false,
   editable: true,
   options: "",
-  bindings: []
+  bindings: [],
+  allowSources: false
 };
 
 export function needsOptions(type: string) {
@@ -173,11 +178,7 @@ export function FieldFormFields({
                     style={{ cursor: "pointer", border: "1px solid var(--line)" }}
                     title={isSelf ? "Self-references (rows in this sheet)" : undefined}
                   >
-                    {active ? (
-                      <Icon name="check" size={12} />
-                    ) : (
-                      <Icon name="link" size={12} />
-                    )}
+                    {active ? <Icon name="check" size={12} /> : <Icon name="link" size={12} />}
                     {s.name}
                     {isSelf && <span style={{ opacity: 0.7, fontSize: 10 }}>(self)</span>}
                   </button>
@@ -188,6 +189,43 @@ export function FieldFormFields({
           <p style={{ margin: 0, color: "var(--ink-4)", fontSize: 11 }}>
             Leave empty to allow references to any sheet in this document (excluding open
             issues).
+          </p>
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--ink-3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              marginTop: 8
+            }}
+          >
+            Sources
+          </span>
+          <div
+            style={{
+              border: "1px solid var(--line)",
+              borderRadius: 6,
+              padding: 8,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              background: "var(--panel-2)"
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => update("allowSources", !value.allowSources)}
+              className={value.allowSources ? "pill pill-accent" : "pill"}
+              style={{ cursor: "pointer", border: "1px solid var(--line)" }}
+              title="Uploaded sources from the global library (PDF, DOCX, MD, TXT)"
+            >
+              {value.allowSources ? <Icon name="check" size={12} /> : <Icon name="folder" size={12} />}
+              Allow source links
+            </button>
+          </div>
+          <p style={{ margin: 0, color: "var(--ink-4)", fontSize: 11 }}>
+            When enabled, the picker also lists uploaded sources (PDF, DOCX, MD, TXT) from the
+            global library.
           </p>
           {value.bindings.length > 0 && (
             <div style={{ display: "grid", gap: 6, marginTop: 4 }}>
@@ -202,15 +240,17 @@ export function FieldFormFields({
                 Display field per target
               </span>
               {value.bindings.map((b) => {
-                const sheet = eligibleSheets.find((s) => s.id === b.allowedSheetId);
+                if (b.allowedSheetId === null) return null;
+                const sheetId = b.allowedSheetId;
+                const sheet = eligibleSheets.find((s) => s.id === sheetId);
                 if (!sheet) return null;
                 return (
                   <DisplayFieldRow
-                    key={b.allowedSheetId}
-                    sheetId={b.allowedSheetId}
+                    key={sheetId}
+                    sheetId={sheetId}
                     sheetName={sheet.name}
                     value={b.displayFieldId}
-                    onChange={(next) => setDisplayField(b.allowedSheetId, next)}
+                    onChange={(next) => setDisplayField(sheetId, next)}
                   />
                 );
               })}
@@ -363,6 +403,28 @@ export function buildFieldPayload(value: FieldFormValue) {
         .map((o) => o.trim())
         .filter(Boolean)
     : [];
+  let bindings: {
+    allowedSheetId: string | null;
+    allowSelfReference: boolean;
+    displayFieldId: string | null;
+    allowSources: boolean;
+  }[] = [];
+  if (isReferenceType(value.type)) {
+    bindings = value.bindings.map((b) => ({
+      allowedSheetId: b.allowedSheetId,
+      allowSelfReference: b.allowSelfReference,
+      displayFieldId: b.displayFieldId,
+      allowSources: value.allowSources
+    }));
+    if (value.allowSources && bindings.length === 0) {
+      bindings.push({
+        allowedSheetId: null,
+        allowSelfReference: false,
+        displayFieldId: null,
+        allowSources: true
+      });
+    }
+  }
   return {
     label: value.label,
     type: value.type,
@@ -371,12 +433,6 @@ export function buildFieldPayload(value: FieldFormValue) {
     unique: value.unique,
     editable: value.editable,
     options: optionList,
-    bindings: isReferenceType(value.type)
-      ? value.bindings.map((b) => ({
-          allowedSheetId: b.allowedSheetId,
-          allowSelfReference: b.allowSelfReference,
-          displayFieldId: b.displayFieldId
-        }))
-      : []
+    bindings
   };
 }

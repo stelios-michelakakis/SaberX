@@ -31,7 +31,9 @@ export async function GET(request: Request) {
           );
         const expandedRowIds = Array.from(
           new Set(
-            links.flatMap((l) => [l.source, l.target]).filter((id) => !matchedRowIds.includes(id))
+            links
+              .flatMap((l) => [l.source, l.target])
+              .filter((id): id is string => Boolean(id) && !matchedRowIds.includes(id as string))
           )
         );
         if (expandedRowIds.length > 0) {

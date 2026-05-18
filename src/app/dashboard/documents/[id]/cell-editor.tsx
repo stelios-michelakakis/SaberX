@@ -18,14 +18,24 @@ export type FieldVm = {
   options?: FieldOption[];
 };
 
-export type RefValue = { id: string; label: string; sheetId: string };
+export type RefValue = {
+  id: string;
+  kind?: "row" | "source";
+  label: string;
+  sheetId: string | null;
+  mimeType?: string | null;
+  display?: string;
+  visibleId?: string;
+};
 
 export type ReferenceTarget = {
   rowId: string;
   visibleId: string | null;
-  sheetId: string;
+  sheetId: string | null;
   sheetName: string;
   display: string | null;
+  kind?: "row" | "source";
+  mimeType?: string | null;
 };
 
 const baseTd: React.CSSProperties = {
@@ -170,16 +180,36 @@ function DisplayValue({ field, value }: { field: FieldVm; value: unknown }) {
     if (!list.length) return <span style={{ color: "var(--ink-4)" }}>—</span>;
     return (
       <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
-        {list.map((r) => (
-          <span
-            key={r.id}
-            className="pill pill-accent mono"
-            style={{ fontSize: 11 }}
-          >
-            <Icon name="link" size={12} />
-            {r.label.split(" - ")[0] || r.id.slice(0, 8)}
-          </span>
-        ))}
+        {list.map((r) => {
+          const isSource = r.kind === "source";
+          const text = isSource
+            ? r.label || r.id.slice(0, 8)
+            : r.label.split(" - ")[0] || r.id.slice(0, 8);
+          const href = isSource ? `/dashboard/sources/${r.id}` : undefined;
+          const chip = (
+            <span
+              key={r.id}
+              className="pill pill-accent mono"
+              style={{ fontSize: 11, cursor: isSource ? "pointer" : "inherit" }}
+              title={isSource ? `Source: ${r.label}` : r.label}
+            >
+              <Icon name={isSource ? "doc" : "link"} size={12} />
+              {text}
+            </span>
+          );
+          return href ? (
+            <a
+              key={r.id}
+              href={href}
+              onClick={(e) => e.stopPropagation()}
+              style={{ textDecoration: "none" }}
+            >
+              {chip}
+            </a>
+          ) : (
+            chip
+          );
+        })}
       </span>
     );
   }
@@ -496,6 +526,8 @@ function EnumEditor({ field, value, onCommit, onClose }: CellProps & { onClose: 
   );
 }
 
+type DraftItem = { id: string; kind: "row" | "source" };
+
 function ReferenceEditor({
   field,
   value,
@@ -503,17 +535,19 @@ function ReferenceEditor({
   onClose
 }: CellProps & { onClose: () => void }) {
   const multi = field.type === "multi_reference";
-  const initial: string[] = useMemo(() => {
+  const initial: DraftItem[] = useMemo(() => {
     if (Array.isArray(value))
-      return (value as RefValue[]).map((v) => v.id);
-    if (value && typeof value === "object" && "id" in value)
-      return [(value as RefValue).id];
+      return (value as RefValue[]).map((v) => ({ id: v.id, kind: v.kind ?? "row" }));
+    if (value && typeof value === "object" && "id" in value) {
+      const v = value as RefValue;
+      return [{ id: v.id, kind: v.kind ?? "row" }];
+    }
     return [];
   }, [value]);
-  const [draft, setDraft] = useState<string[]>(initial);
+  const [draft, setDraft] = useState<DraftItem[]>(initial);
   const [targets, setTargets] = useState<ReferenceTarget[] | null>(null);
   const [filter, setFilter] = useState("");
-  const draftRef = useRef<string[]>(initial);
+  const draftRef = useRef<DraftItem[]>(initial);
   const committedRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -527,12 +561,15 @@ function ReferenceEditor({
       .then((data: { targets: ReferenceTarget[] }) => setTargets(data.targets));
   }, [field.id]);
 
-  const commitValues = async (next: string[]) => {
+  const commitValues = async (next: DraftItem[]) => {
     if (committedRef.current) return;
     committedRef.current = true;
-    const same = next.length === initial.length && next.every((v, i) => v === initial[i]);
+    const same =
+      next.length === initial.length &&
+      next.every((v, i) => v.id === initial[i].id && v.kind === initial[i].kind);
     if (!same) {
-      await onCommit(multi ? next : next[0] ?? "");
+      const payload = next.map((d) => ({ kind: d.kind, id: d.id }));
+      await onCommit(multi ? payload : payload[0] ?? "");
     }
     onClose();
   };
@@ -559,11 +596,17 @@ function ReferenceEditor({
   });
 
   return (
-    <td style={baseTd} onClick={(e) => e.stopPropagation()}>
+    <td
+      data-field-id={field.id}
+      style={{ ...baseTd, overflow: "visible", position: "relative", zIndex: 50 }}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div
         ref={wrapRef}
         style={{
-          position: "relative",
+          position: "absolute",
+          top: 0,
+          left: 0,
           background: "var(--panel)",
           border: "1px solid var(--sx-accent)",
           borderRadius: 6,
@@ -572,7 +615,9 @@ function ReferenceEditor({
           maxWidth: 360,
           display: "flex",
           flexDirection: "column",
-          gap: 6
+          gap: 6,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+          zIndex: 100
         }}
       >
         <input
@@ -606,20 +651,23 @@ function ReferenceEditor({
             <div style={{ color: "var(--ink-3)", fontSize: 12 }}>No matching rows.</div>
           )}
           {filtered.map((t) => {
-            const active = draft.includes(t.rowId);
+            const kind: "row" | "source" = t.kind ?? "row";
+            const active = draft.some((d) => d.id === t.rowId && d.kind === kind);
+            const isSource = kind === "source";
             return (
               <button
-                key={t.rowId}
+                key={`${kind}-${t.rowId}`}
                 type="button"
                 onClick={() => {
+                  const item: DraftItem = { id: t.rowId, kind };
                   if (multi) {
                     setDraft((d) =>
-                      d.includes(t.rowId)
-                        ? d.filter((v) => v !== t.rowId)
-                        : [...d, t.rowId]
+                      d.some((v) => v.id === item.id && v.kind === item.kind)
+                        ? d.filter((v) => !(v.id === item.id && v.kind === item.kind))
+                        : [...d, item]
                     );
                   } else {
-                    commitValues([t.rowId]);
+                    commitValues([item]);
                   }
                 }}
                 style={{
@@ -638,7 +686,7 @@ function ReferenceEditor({
                 }}
               >
                 <Icon
-                  name={active ? "check" : "link"}
+                  name={active ? "check" : isSource ? "doc" : "link"}
                   size={12}
                   style={{ color: active ? "var(--sx-accent)" : "var(--ink-4)" }}
                 />
@@ -648,13 +696,19 @@ function ReferenceEditor({
                     <span
                       className="mono"
                       style={{ color: "var(--ink-3)", fontSize: 11 }}
-                      title="Row ID"
+                      title={isSource ? "Filename" : "Row ID"}
                     >
                       {t.visibleId ?? t.rowId.slice(0, 8)}
                     </span>
                   </>
                 ) : (
-                  <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
+                  <span
+                    className={isSource ? undefined : "mono"}
+                    style={{
+                      color: isSource ? "var(--ink)" : "var(--accent-ink)",
+                      fontSize: isSource ? 12.5 : 11.5
+                    }}
+                  >
                     {t.visibleId ?? t.rowId.slice(0, 8)}
                   </span>
                 )}

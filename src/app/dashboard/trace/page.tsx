@@ -125,6 +125,7 @@ export default async function TracePage({
 
   const neededScalar = new Set<string>();
   for (const l of linkRows) {
+    if (!l.targetRowId) continue;
     const targetSheet = targetRowSheetById.get(l.targetRowId);
     if (!targetSheet) continue;
     const df = displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`);
@@ -145,17 +146,21 @@ export default async function TracePage({
     for (const s of scalarRows) scalarLookup.set(`${s.rowId}|${s.fieldId}`, s.displayText);
   }
 
-  const traceLinks: TraceLink[] = linkRows.map((l) => {
-    const targetSheet = targetRowSheetById.get(l.targetRowId);
-    const df = targetSheet ? displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`) : null;
-    const dv = df ? scalarLookup.get(`${l.targetRowId}|${df}`) : null;
-    return {
-      sourceRowId: l.sourceRowId,
-      sourceFieldId: l.sourceFieldId,
-      targetRowId: l.targetRowId,
-      targetDisplay: dv && dv.trim().length > 0 ? dv : null
-    };
-  });
+  // Trace view shows row-to-row links only; cell-level source attachments are
+  // surfaced on the document grid as chips and on the Sources page.
+  const traceLinks: TraceLink[] = linkRows
+    .filter((l): l is typeof l & { targetRowId: string } => Boolean(l.targetRowId))
+    .map((l) => {
+      const targetSheet = targetRowSheetById.get(l.targetRowId);
+      const df = targetSheet ? displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`) : null;
+      const dv = df ? scalarLookup.get(`${l.targetRowId}|${df}`) : null;
+      return {
+        sourceRowId: l.sourceRowId,
+        sourceFieldId: l.sourceFieldId,
+        targetRowId: l.targetRowId,
+        targetDisplay: dv && dv.trim().length > 0 ? dv : null
+      };
+    });
   const traceRows: TraceRow[] = rowRows.map((r) => ({
     id: r.id,
     visibleId: r.visibleId,

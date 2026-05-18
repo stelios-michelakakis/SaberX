@@ -22,11 +22,14 @@ services:
       APP_ORIGIN: https://localhost
       SESSION_COOKIE_NAME: saberx_session
       INVITATION_SECRET: change-me-before-use
+      SOURCE_STORAGE_ROOT: /app/var/sources
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "3000:3000"
+    volumes:
+      - source_files:/app/var/sources
 
   worker:
     build: .
@@ -39,3 +42,4 @@ services:
 
 volumes:
   postgres_data:
+  source_files:
