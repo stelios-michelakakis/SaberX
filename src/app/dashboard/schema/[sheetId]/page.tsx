@@ -66,7 +66,7 @@ export default async function SchemaPage({
           options: f.options ?? [],
           bindings:
             (f as unknown as {
-              bindings?: { allowedSheetId: string; allowSelfReference: boolean }[];
+              bindings?: { allowedSheetId: string; allowSelfReference: boolean; displayFieldId?: string | null }[];
             }).bindings ?? []
         }))}
       />

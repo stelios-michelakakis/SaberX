@@ -522,7 +522,7 @@ export async function createField(
     editable?: boolean;
     options?: string[];
     validation?: Record<string, unknown>;
-    bindings?: { allowedSheetId: string; allowSelfReference?: boolean }[];
+    bindings?: { allowedSheetId: string; allowSelfReference?: boolean; displayFieldId?: string | null }[];
   }
 ) {
   if (!FIELD_TYPES.includes(input.type)) throw new Error("Unsupported field type");
@@ -577,7 +577,8 @@ export async function createField(
             fieldId: field.id,
             allowedDocumentId: sheet.documentId,
             allowedSheetId: b.allowedSheetId,
-            allowSelfReference: b.allowSelfReference ?? false
+            allowSelfReference: b.allowSelfReference ?? false,
+            displayFieldId: b.displayFieldId ?? null
           }))
         );
       }
@@ -617,7 +618,7 @@ export async function updateField(
     options: string[];
     validation: Record<string, unknown>;
     archived: boolean;
-    bindings: { allowedSheetId: string; allowSelfReference?: boolean }[];
+    bindings: { allowedSheetId: string; allowSelfReference?: boolean; displayFieldId?: string | null }[];
   }>
 ) {
   const txId = randomUUID();
@@ -684,7 +685,8 @@ export async function updateField(
               fieldId,
               allowedDocumentId: sheet.documentId,
               allowedSheetId: b.allowedSheetId,
-              allowSelfReference: b.allowSelfReference ?? false
+              allowSelfReference: b.allowSelfReference ?? false,
+              displayFieldId: b.displayFieldId ?? null
             }))
           );
         }
@@ -826,7 +828,11 @@ export async function getSheetGrid(sheetId: string) {
     options: optionRows.filter((o) => o.fieldId === f.id).map((o) => ({ label: o.label, value: o.value })),
     bindings: bindingRows
       .filter((b) => b.fieldId === f.id)
-      .map((b) => ({ allowedSheetId: b.allowedSheetId, allowSelfReference: b.allowSelfReference }))
+      .map((b) => ({
+        allowedSheetId: b.allowedSheetId,
+        allowSelfReference: b.allowSelfReference,
+        displayFieldId: b.displayFieldId
+      }))
   }));
 
   if (sheet.sheetKind === "glossary") {
@@ -854,6 +860,51 @@ export async function getSheetGrid(sheetId: string) {
         .where(inArray(cellValueLinks.sourceRowId, rowIds))
     : [];
 
+  // Resolve per-binding display values. Map: `${sourceFieldId}|${targetSheetId}` -> displayFieldId.
+  const displayMap = new Map<string, string>();
+  for (const b of bindingRows) {
+    if (b.displayFieldId && b.allowedSheetId) {
+      displayMap.set(`${b.fieldId}|${b.allowedSheetId}`, b.displayFieldId);
+    }
+  }
+  const displayPairs = new Map<string, string>(); // `${targetRowId}|${displayFieldId}` -> displayText
+  if (linkCells.length && displayMap.size) {
+    const needed: { rowId: string; fieldId: string }[] = [];
+    const seen = new Set<string>();
+    for (const link of linkCells) {
+      const df = displayMap.get(`${link.sourceFieldId}|${link.targetSheetId}`);
+      if (!df) continue;
+      const key = `${link.targetRowId}|${df}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      needed.push({ rowId: link.targetRowId, fieldId: df });
+    }
+    if (needed.length) {
+      const scalarRows = await db
+        .select({
+          rowId: cellValuesScalar.rowId,
+          fieldId: cellValuesScalar.fieldId,
+          displayText: cellValuesScalar.displayText
+        })
+        .from(cellValuesScalar)
+        .where(
+          and(
+            inArray(
+              cellValuesScalar.rowId,
+              Array.from(new Set(needed.map((n) => n.rowId)))
+            ),
+            inArray(
+              cellValuesScalar.fieldId,
+              Array.from(new Set(needed.map((n) => n.fieldId)))
+            )
+          )
+        );
+      for (const s of scalarRows) {
+        displayPairs.set(`${s.rowId}|${s.fieldId}`, s.displayText);
+      }
+    }
+  }
+
   return {
     sheet,
     fields: fieldsWithOptions,
@@ -869,7 +920,19 @@ export async function getSheetGrid(sheetId: string) {
         const links = linkCells
           .filter((link) => link.sourceRowId === row.id && link.sourceFieldId === field.id)
           .sort((a, b) => a.ordinal - b.ordinal)
-          .map((link) => ({ id: link.targetRowId, label: `${link.targetVisibleId ?? "(no ID)"} - ${link.targetSheetName}`, sheetId: link.targetSheetId }));
+          .map((link) => {
+            const visibleId = link.targetVisibleId ?? "(no ID)";
+            const df = displayMap.get(`${link.sourceFieldId}|${link.targetSheetId}`);
+            const dv = df ? displayPairs.get(`${link.targetRowId}|${df}`) : null;
+            const display = dv && dv.trim().length > 0 ? dv : visibleId;
+            return {
+              id: link.targetRowId,
+              label: `${display} - ${link.targetSheetName}`,
+              display,
+              visibleId,
+              sheetId: link.targetSheetId
+            };
+          });
         if (links.length) cells[field.id] = links;
       }
       return { ...row, cells };
@@ -1072,6 +1135,38 @@ async function validateReferenceTargets(client: any, sheet: Sheet, field: Field,
   }
 }
 
+async function enrichTargetsWithDisplay<T extends { rowId: string; sheetId: string; visibleId: string | null }>(
+  targets: T[],
+  displayBySheet: Map<string, string>
+): Promise<(T & { display: string | null })[]> {
+  if (!targets.length || displayBySheet.size === 0) {
+    return targets.map((t) => ({ ...t, display: null }));
+  }
+  const needed: { rowId: string; fieldId: string }[] = [];
+  for (const t of targets) {
+    const df = displayBySheet.get(t.sheetId);
+    if (df) needed.push({ rowId: t.rowId, fieldId: df });
+  }
+  if (!needed.length) return targets.map((t) => ({ ...t, display: null }));
+  const rowsSet = Array.from(new Set(needed.map((n) => n.rowId)));
+  const fieldsSet = Array.from(new Set(needed.map((n) => n.fieldId)));
+  const scalarRows = await db
+    .select({
+      rowId: cellValuesScalar.rowId,
+      fieldId: cellValuesScalar.fieldId,
+      displayText: cellValuesScalar.displayText
+    })
+    .from(cellValuesScalar)
+    .where(and(inArray(cellValuesScalar.rowId, rowsSet), inArray(cellValuesScalar.fieldId, fieldsSet)));
+  const lookup = new Map<string, string>();
+  for (const s of scalarRows) lookup.set(`${s.rowId}|${s.fieldId}`, s.displayText);
+  return targets.map((t) => {
+    const df = displayBySheet.get(t.sheetId);
+    const dv = df ? lookup.get(`${t.rowId}|${df}`) : null;
+    return { ...t, display: dv && dv.trim().length > 0 ? dv : null };
+  });
+}
+
 export async function listReferenceTargetsForField(fieldId: string) {
   const [field] = await db.select().from(fields).where(eq(fields.id, fieldId)).limit(1);
   if (!field) throw new Error("Field not found");
@@ -1082,6 +1177,11 @@ export async function listReferenceTargetsForField(fieldId: string) {
     .select()
     .from(referenceBindings)
     .where(eq(referenceBindings.fieldId, fieldId));
+
+  const displayBySheet = new Map<string, string>();
+  for (const b of fieldBindings) {
+    if (b.allowedSheetId && b.displayFieldId) displayBySheet.set(b.allowedSheetId, b.displayFieldId);
+  }
 
   const baseQuery = db
     .select({
@@ -1094,13 +1194,14 @@ export async function listReferenceTargetsForField(fieldId: string) {
     .innerJoin(sheets, eq(sheets.id, rows.sheetId))
     .innerJoin(fields, and(eq(fields.sheetId, sheets.id), eq(fields.isIdField, true)));
 
+  let targets;
   if (fieldBindings.length > 0) {
     const allowedSheetIds = fieldBindings
       .map((b) => b.allowedSheetId)
       .filter((id): id is string => Boolean(id));
     const allowSelf = fieldBindings.some((b) => b.allowSelfReference);
     if (allowedSheetIds.length === 0) return [];
-    return baseQuery
+    targets = await baseQuery
       .where(
         and(
           eq(sheets.documentId, sheet.documentId),
@@ -1111,25 +1212,27 @@ export async function listReferenceTargetsForField(fieldId: string) {
         )
       )
       .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
+  } else {
+    targets = await baseQuery
+      .where(
+        and(
+          eq(sheets.documentId, sheet.documentId),
+          isNull(rows.deletedAt),
+          isNull(sheets.deletedAt),
+          sql`${sheets.id} <> ${field.sheetId}`,
+          sql`${sheets.sheetKind} <> 'open_issues'`
+        )
+      )
+      .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
   }
 
-  return baseQuery
-    .where(
-      and(
-        eq(sheets.documentId, sheet.documentId),
-        isNull(rows.deletedAt),
-        isNull(sheets.deletedAt),
-        sql`${sheets.id} <> ${field.sheetId}`,
-        sql`${sheets.sheetKind} <> 'open_issues'`
-      )
-    )
-    .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
+  return enrichTargetsWithDisplay(targets, displayBySheet);
 }
 
 export async function listReferenceTargets(sheetId: string) {
   const [sheet] = await db.select().from(sheets).where(eq(sheets.id, sheetId)).limit(1);
   if (!sheet) throw new Error("Sheet not found");
-  return db
+  const targets = await db
     .select({
       rowId: rows.id,
       visibleId: rows.visibleId,
@@ -1141,6 +1244,7 @@ export async function listReferenceTargets(sheetId: string) {
     .innerJoin(fields, and(eq(fields.sheetId, sheets.id), eq(fields.isIdField, true)))
     .where(and(eq(sheets.documentId, sheet.documentId), isNull(rows.deletedAt), isNull(sheets.deletedAt), sql`${sheets.id} <> ${sheetId}`, sql`${sheets.sheetKind} <> 'open_issues'`))
     .orderBy(asc(sheets.displayOrder), asc(rows.canonicalOrder));
+  return targets.map((t) => ({ ...t, display: null as string | null }));
 }
 
 export async function refreshGlossary(documentId: string, user: ActorUser | null = null, client: any = db, transactionId = randomUUID()) {

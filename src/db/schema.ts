@@ -353,6 +353,10 @@ export const referenceBindings = pgTable(
     allowedSheetId: uuid("allowed_sheet_id").references(() => sheets.id, { onDelete: "cascade" }),
     allowedIdFieldId: uuid("allowed_id_field_id").references(() => fields.id, { onDelete: "cascade" }),
     allowSelfReference: boolean("allow_self_reference").notNull().default(false),
+    // When set, reference chips and pickers render this field's value from the
+    // target row instead of the row's visible ID. Falls back to visible ID if null
+    // or if the referenced field's value is empty.
+    displayFieldId: uuid("display_field_id").references(() => fields.id, { onDelete: "set null" }),
     ...timestamps
   },
   (table) => ({

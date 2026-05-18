@@ -1,6 +1,14 @@
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { cellValueLinks, documents, fields, rows, sheets } from "@/db/schema";
+import {
+  cellValueLinks,
+  cellValuesScalar,
+  documents,
+  fields,
+  referenceBindings,
+  rows,
+  sheets
+} from "@/db/schema";
 import { PageHeader, Empty } from "@/components/saberx/page-header";
 import { requireUser } from "@/services/auth";
 import { TraceClient, type TraceLink, type TraceRow, type TraceSheet } from "./trace-client";
@@ -94,11 +102,60 @@ export default async function TracePage({
     .leftJoin(cellValueLinks, eq(cellValueLinks.sourceRowId, rows.id))
     .where(and(isNull(rows.deletedAt), isNull(cellValueLinks.sourceRowId)));
 
-  const traceLinks: TraceLink[] = linkRows.map((l) => ({
-    sourceRowId: l.sourceRowId,
-    sourceFieldId: l.sourceFieldId,
-    targetRowId: l.targetRowId
-  }));
+  // Resolve a display value per link based on the source field's binding.
+  const sourceFieldIds = Array.from(new Set(linkRows.map((l) => l.sourceFieldId)));
+  const bindingRows = sourceFieldIds.length
+    ? await db
+        .select({
+          fieldId: referenceBindings.fieldId,
+          allowedSheetId: referenceBindings.allowedSheetId,
+          displayFieldId: referenceBindings.displayFieldId
+        })
+        .from(referenceBindings)
+        .where(inArray(referenceBindings.fieldId, sourceFieldIds))
+    : [];
+  const displayBySourceAndTargetSheet = new Map<string, string>();
+  for (const b of bindingRows) {
+    if (b.allowedSheetId && b.displayFieldId) {
+      displayBySourceAndTargetSheet.set(`${b.fieldId}|${b.allowedSheetId}`, b.displayFieldId);
+    }
+  }
+  const targetRowSheetById = new Map<string, string>();
+  for (const r of rowRows) targetRowSheetById.set(r.id, r.sheetId);
+
+  const neededScalar = new Set<string>();
+  for (const l of linkRows) {
+    const targetSheet = targetRowSheetById.get(l.targetRowId);
+    if (!targetSheet) continue;
+    const df = displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`);
+    if (df) neededScalar.add(`${l.targetRowId}|${df}`);
+  }
+  const scalarLookup = new Map<string, string>();
+  if (neededScalar.size) {
+    const rowIdsNeeded = Array.from(new Set(Array.from(neededScalar).map((k) => k.split("|")[0])));
+    const fieldIdsNeeded = Array.from(new Set(Array.from(neededScalar).map((k) => k.split("|")[1])));
+    const scalarRows = await db
+      .select({
+        rowId: cellValuesScalar.rowId,
+        fieldId: cellValuesScalar.fieldId,
+        displayText: cellValuesScalar.displayText
+      })
+      .from(cellValuesScalar)
+      .where(and(inArray(cellValuesScalar.rowId, rowIdsNeeded), inArray(cellValuesScalar.fieldId, fieldIdsNeeded)));
+    for (const s of scalarRows) scalarLookup.set(`${s.rowId}|${s.fieldId}`, s.displayText);
+  }
+
+  const traceLinks: TraceLink[] = linkRows.map((l) => {
+    const targetSheet = targetRowSheetById.get(l.targetRowId);
+    const df = targetSheet ? displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`) : null;
+    const dv = df ? scalarLookup.get(`${l.targetRowId}|${df}`) : null;
+    return {
+      sourceRowId: l.sourceRowId,
+      sourceFieldId: l.sourceFieldId,
+      targetRowId: l.targetRowId,
+      targetDisplay: dv && dv.trim().length > 0 ? dv : null
+    };
+  });
   const traceRows: TraceRow[] = rowRows.map((r) => ({
     id: r.id,
     visibleId: r.visibleId,

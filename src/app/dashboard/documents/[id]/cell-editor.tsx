@@ -25,6 +25,7 @@ export type ReferenceTarget = {
   visibleId: string | null;
   sheetId: string;
   sheetName: string;
+  display: string | null;
 };
 
 const baseTd: React.CSSProperties = {
@@ -547,12 +548,15 @@ function ReferenceEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = (targets ?? []).filter(
-    (t) =>
-      !filter ||
-      (t.visibleId ?? "").toLowerCase().includes(filter.toLowerCase()) ||
-      t.sheetName.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = (targets ?? []).filter((t) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return (
+      (t.visibleId ?? "").toLowerCase().includes(q) ||
+      (t.display ?? "").toLowerCase().includes(q) ||
+      t.sheetName.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <td style={baseTd} onClick={(e) => e.stopPropagation()}>
@@ -638,9 +642,22 @@ function ReferenceEditor({
                   size={12}
                   style={{ color: active ? "var(--sx-accent)" : "var(--ink-4)" }}
                 />
-                <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
-                  {t.visibleId ?? t.rowId.slice(0, 8)}
-                </span>
+                {t.display ? (
+                  <>
+                    <span style={{ color: "var(--ink)", fontSize: 12.5 }}>{t.display}</span>
+                    <span
+                      className="mono"
+                      style={{ color: "var(--ink-3)", fontSize: 11 }}
+                      title="Row ID"
+                    >
+                      {t.visibleId ?? t.rowId.slice(0, 8)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
+                    {t.visibleId ?? t.rowId.slice(0, 8)}
+                  </span>
+                )}
                 <span style={{ color: "var(--ink-3)", marginLeft: "auto", fontSize: 11.5 }}>
                   {t.sheetName}
                 </span>

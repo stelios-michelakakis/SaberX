@@ -105,7 +105,7 @@ export function DocumentClient({
       const selector = focusField
         ? `tr[data-row-id="${focusRow}"] td[data-field-id="${focusField}"]`
         : `tr[data-row-id="${focusRow}"]`;
-      const el = document.querySelector<HTMLElement>(selector);
+      const el = window.document.querySelector<HTMLElement>(selector);
       if (!el) return false;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       const prev = el.style.transition;
