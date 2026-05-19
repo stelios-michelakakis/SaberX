@@ -93,8 +93,19 @@ export function Topbar({
         toast.error("Import failed", { detail: text.slice(0, 200) });
         return;
       }
+      const payload = (await res.json().catch(() => null)) as
+        | { document?: { id: string; title: string } }
+        | null;
       toast.success(`Imported ${file.name}`);
-      router.refresh();
+      const newDocId = payload?.document?.id;
+      if (newDocId) {
+        // Walk the user through any detected cross-references before they
+        // even see the imported sheets — same review screen as the manual
+        // entry from the document toolbar, but in step-by-step wizard mode.
+        router.push(`/dashboard/documents/${newDocId}/resolve-references?wizard=1`);
+      } else {
+        router.refresh();
+      }
     } catch (err) {
       toast.dismiss(progressId);
       toast.error("Import failed", { detail: (err as Error).message });

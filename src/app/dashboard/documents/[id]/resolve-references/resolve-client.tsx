@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/saberx/icon";
 import { useToast } from "@/components/saberx/toast";
@@ -68,11 +68,14 @@ export function ResolveReferencesClient({
   documentTitle: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const wizardMode = searchParams?.get("wizard") === "1";
   const toast = useToast();
   const [data, setData] = useState<DetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Map<string, ColumnDecision>>(new Map());
   const [applying, setApplying] = useState(false);
+  const [stepIdx, setStepIdx] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,18 +247,117 @@ export function ResolveReferencesClient({
         </div>
       )}
 
-      {data?.columns.map((col) => {
-        const d = decisions.get(col.fieldId);
-        if (!d) return null;
-        return (
-          <Column
-            key={col.fieldId}
-            column={col}
-            decision={d}
-            onChange={(mut) => setColumn(col.fieldId, mut)}
-          />
-        );
-      })}
+      {data && wizardMode && data.columns.length > 0 && (
+        <WizardStepper
+          stepIdx={stepIdx}
+          total={data.columns.length}
+          onPrev={() => setStepIdx((i) => Math.max(0, i - 1))}
+          onNext={() => setStepIdx((i) => Math.min(data.columns.length - 1, i + 1))}
+          onApply={apply}
+          applying={applying}
+          column={data.columns[stepIdx]}
+        />
+      )}
+
+      {data &&
+        (wizardMode
+          ? data.columns
+              .slice(stepIdx, stepIdx + 1)
+              .map((col) => {
+                const d = decisions.get(col.fieldId);
+                if (!d) return null;
+                return (
+                  <Column
+                    key={col.fieldId}
+                    column={col}
+                    decision={d}
+                    onChange={(mut) => setColumn(col.fieldId, mut)}
+                  />
+                );
+              })
+          : data.columns.map((col) => {
+              const d = decisions.get(col.fieldId);
+              if (!d) return null;
+              return (
+                <Column
+                  key={col.fieldId}
+                  column={col}
+                  decision={d}
+                  onChange={(mut) => setColumn(col.fieldId, mut)}
+                />
+              );
+            }))}
+    </div>
+  );
+}
+
+function WizardStepper({
+  stepIdx,
+  total,
+  onPrev,
+  onNext,
+  onApply,
+  applying,
+  column
+}: {
+  stepIdx: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onApply: () => void;
+  applying: boolean;
+  column: DetectedColumn;
+}) {
+  const atFirst = stepIdx === 0;
+  const atLast = stepIdx === total - 1;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "8px 12px",
+        background: "var(--panel-2)",
+        border: "1px solid var(--line)",
+        borderRadius: 6,
+        fontSize: 12.5
+      }}
+    >
+      <span style={{ color: "var(--ink-3)" }}>
+        Step <strong style={{ color: "var(--ink)" }}>{stepIdx + 1}</strong> of {total}
+      </span>
+      <span style={{ color: "var(--ink-4)" }}>·</span>
+      <span style={{ color: "var(--ink-2)" }}>
+        {column.sheetName} → <strong>{column.fieldLabel}</strong>
+      </span>
+      <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+        <button
+          type="button"
+          className="sx-btn sx-btn-sm"
+          onClick={onPrev}
+          disabled={atFirst}
+        >
+          <Icon name="arrowL" size={12} /> Back
+        </button>
+        {atLast ? (
+          <button
+            type="button"
+            className="sx-btn sx-btn-primary sx-btn-sm"
+            onClick={onApply}
+            disabled={applying}
+          >
+            <Icon name="check" size={12} /> {applying ? "Applying…" : "Apply all"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="sx-btn sx-btn-primary sx-btn-sm"
+            onClick={onNext}
+          >
+            Next <Icon name="arrowR" size={12} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
