@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { PageHeader } from "@/components/saberx/page-header";
 import { getWorkspaceData, listIntegrityIssues } from "@/services/repository";
 import { requireUser } from "@/services/auth";
 
@@ -51,19 +50,31 @@ export default async function RepositoryPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Workspace"
-        title="Documents"
-        subtitle="Engineering workbooks across the program — CONOPS, ICDs, RTMs, and supporting artefacts."
-        meta={
-          <>
-            <span><strong style={{ color: "var(--ink)" }}>{totalDocs}</strong> documents</span>
-            <span><strong style={{ color: "var(--ink)" }}>{baselined}</strong> baselined</span>
-            <span><strong style={{ color: "var(--ink)" }}>{underReview}</strong> under review</span>
-            <span><strong style={{ color: "var(--ink)" }}>{totalIssues}</strong> open integrity issues</span>
-          </>
-        }
-      />
+      <div
+        style={{
+          padding: "10px 28px",
+          borderBottom: "1px solid var(--line)",
+          background: "var(--panel)",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 16,
+          fontSize: 12,
+          color: "var(--ink-3)"
+        }}
+      >
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{totalDocs}</strong> documents
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{baselined}</strong> baselined
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{underReview}</strong> under review
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{totalIssues}</strong> open integrity issues
+        </span>
+      </div>
 
       <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
         <div
