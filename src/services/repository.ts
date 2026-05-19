@@ -1221,7 +1221,7 @@ async function validateReferenceTargets(client: any, sheet: Sheet, field: Field,
       .select({ row: rows, sheet: sheets })
       .from(rows)
       .innerJoin(sheets, eq(sheets.id, rows.sheetId))
-      .where(and(inArray(rows.id, rowIds), isNull(rows.deletedAt), eq(sheets.documentId, sheet.documentId)));
+      .where(and(inArray(rows.id, rowIds), isNull(rows.deletedAt), isNull(sheets.deletedAt)));
     if (targetRows.length !== rowIds.length) throw new Error("One or more references are invalid");
 
     if (bindings.length > 0) {

@@ -334,6 +334,13 @@ export function DocumentClient({
       <Link href={`/dashboard/trace?document=${document.id}`} className="sx-btn sx-btn-sm">
         <Icon name="trace" size={12} /> Trace
       </Link>
+      <Link
+        href={`/dashboard/documents/${document.id}/resolve-references`}
+        className="sx-btn sx-btn-sm"
+        title="Detect IDs in text cells and link them"
+      >
+        <Icon name="link" size={12} /> Detect refs
+      </Link>
       <button className="sx-btn sx-btn-sm" type="button" onClick={onExport}>
         <Icon name="download" size={12} /> Export
       </button>
