@@ -506,24 +506,14 @@ function TreePicker({
                       }}
                       title={isSelf ? "Self-references (rows in this sheet)" : undefined}
                     >
-                      <span
-                        aria-hidden
+                      <Icon
+                        name={active ? "check" : "link"}
+                        size={12}
                         style={{
-                          width: 12,
-                          height: 12,
-                          border: "1px solid var(--line-strong)",
-                          borderRadius: 3,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: active ? "var(--sx-accent)" : "transparent",
+                          color: active ? "var(--sx-accent)" : "var(--ink-4)",
                           flex: "none"
                         }}
-                      >
-                        {active && (
-                          <Icon name="check" size={10} style={{ color: "white" }} />
-                        )}
-                      </span>
+                      />
                       <span>{s.name}</span>
                       {isSelf && (
                         <span style={{ opacity: 0.7, fontSize: 10, color: "var(--ink-3)" }}>

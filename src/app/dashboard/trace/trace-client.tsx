@@ -9,6 +9,7 @@ export type TraceLink = {
   sourceRowId: string;
   sourceFieldId: string;
   targetRowId: string;
+  sourceDisplay?: string | null;
   targetDisplay?: string | null;
 };
 
@@ -213,9 +214,29 @@ function TraceTable({
             return (
               <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                 <Td>
-                  <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
-                    {src?.visibleId || link.sourceRowId.slice(0, 8)}
-                  </span>
+                  {link.sourceDisplay ? (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "baseline",
+                        gap: 6,
+                        fontSize: 12
+                      }}
+                    >
+                      <span style={{ color: "var(--ink)" }}>{link.sourceDisplay}</span>
+                      <span
+                        className="mono"
+                        style={{ color: "var(--ink-3)", fontSize: 11 }}
+                        title="Row ID"
+                      >
+                        {src?.visibleId || link.sourceRowId.slice(0, 8)}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
+                      {src?.visibleId || link.sourceRowId.slice(0, 8)}
+                    </span>
+                  )}
                 </Td>
                 <Td muted>
                   {srcSheet ? (

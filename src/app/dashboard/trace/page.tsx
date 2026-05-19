@@ -102,7 +102,9 @@ export default async function TracePage({
     .leftJoin(cellValueLinks, eq(cellValueLinks.sourceRowId, rows.id))
     .where(and(isNull(rows.deletedAt), isNull(cellValueLinks.sourceRowId)));
 
-  // Resolve a display value per link based on the source field's binding.
+  // Resolve a display value per link. Priority:
+  //   1. The per-binding displayFieldId chosen on the source field.
+  //   2. A sensible default per sheet — first non-ID short/long-text field.
   const sourceFieldIds = Array.from(new Set(linkRows.map((l) => l.sourceFieldId)));
   const bindingRows = sourceFieldIds.length
     ? await db
@@ -114,27 +116,71 @@ export default async function TracePage({
         .from(referenceBindings)
         .where(inArray(referenceBindings.fieldId, sourceFieldIds))
     : [];
-  const displayBySourceAndTargetSheet = new Map<string, string>();
+  const bindingDisplayBySourceAndTargetSheet = new Map<string, string>();
   for (const b of bindingRows) {
     if (b.allowedSheetId && b.displayFieldId) {
-      displayBySourceAndTargetSheet.set(`${b.fieldId}|${b.allowedSheetId}`, b.displayFieldId);
+      bindingDisplayBySourceAndTargetSheet.set(
+        `${b.fieldId}|${b.allowedSheetId}`,
+        b.displayFieldId
+      );
     }
   }
-  const targetRowSheetById = new Map<string, string>();
-  for (const r of rowRows) targetRowSheetById.set(r.id, r.sheetId);
+  const rowSheetById = new Map<string, string>();
+  for (const r of rowRows) rowSheetById.set(r.id, r.sheetId);
+
+  const involvedSheetIds = Array.from(new Set(rowRows.map((r) => r.sheetId)));
+  const candidateFields = involvedSheetIds.length
+    ? await db
+        .select({
+          id: fields.id,
+          sheetId: fields.sheetId,
+          isIdField: fields.isIdField,
+          type: fields.type,
+          archived: fields.archived,
+          displayOrder: fields.displayOrder
+        })
+        .from(fields)
+        .where(inArray(fields.sheetId, involvedSheetIds))
+    : [];
+  const defaultDisplayBySheet = new Map<string, string>();
+  for (const sheetId of involvedSheetIds) {
+    const candidate = candidateFields
+      .filter(
+        (f) =>
+          f.sheetId === sheetId &&
+          !f.isIdField &&
+          !f.archived &&
+          (f.type === "short_text" || f.type === "long_text" || f.type === "rich_note")
+      )
+      .sort((a, b) => a.displayOrder - b.displayOrder)[0];
+    if (candidate) defaultDisplayBySheet.set(sheetId, candidate.id);
+  }
+
+  const resolveDisplayFieldId = (rowId: string, sourceFieldId: string | null): string | null => {
+    const sheetId = rowSheetById.get(rowId);
+    if (!sheetId) return null;
+    if (sourceFieldId) {
+      const perBinding = bindingDisplayBySourceAndTargetSheet.get(`${sourceFieldId}|${sheetId}`);
+      if (perBinding) return perBinding;
+    }
+    return defaultDisplayBySheet.get(sheetId) ?? null;
+  };
 
   const neededScalar = new Set<string>();
   for (const l of linkRows) {
-    if (!l.targetRowId) continue;
-    const targetSheet = targetRowSheetById.get(l.targetRowId);
-    if (!targetSheet) continue;
-    const df = displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`);
-    if (df) neededScalar.add(`${l.targetRowId}|${df}`);
+    const tgtDf = l.targetRowId ? resolveDisplayFieldId(l.targetRowId, l.sourceFieldId) : null;
+    if (tgtDf && l.targetRowId) neededScalar.add(`${l.targetRowId}|${tgtDf}`);
+    const srcDf = resolveDisplayFieldId(l.sourceRowId, null);
+    if (srcDf) neededScalar.add(`${l.sourceRowId}|${srcDf}`);
   }
   const scalarLookup = new Map<string, string>();
   if (neededScalar.size) {
-    const rowIdsNeeded = Array.from(new Set(Array.from(neededScalar).map((k) => k.split("|")[0])));
-    const fieldIdsNeeded = Array.from(new Set(Array.from(neededScalar).map((k) => k.split("|")[1])));
+    const rowIdsNeeded = Array.from(
+      new Set(Array.from(neededScalar).map((k) => k.split("|")[0]))
+    );
+    const fieldIdsNeeded = Array.from(
+      new Set(Array.from(neededScalar).map((k) => k.split("|")[1]))
+    );
     const scalarRows = await db
       .select({
         rowId: cellValuesScalar.rowId,
@@ -142,25 +188,33 @@ export default async function TracePage({
         displayText: cellValuesScalar.displayText
       })
       .from(cellValuesScalar)
-      .where(and(inArray(cellValuesScalar.rowId, rowIdsNeeded), inArray(cellValuesScalar.fieldId, fieldIdsNeeded)));
+      .where(
+        and(
+          inArray(cellValuesScalar.rowId, rowIdsNeeded),
+          inArray(cellValuesScalar.fieldId, fieldIdsNeeded)
+        )
+      );
     for (const s of scalarRows) scalarLookup.set(`${s.rowId}|${s.fieldId}`, s.displayText);
   }
+
+  const resolveDisplay = (rowId: string, sourceFieldId: string | null): string | null => {
+    const df = resolveDisplayFieldId(rowId, sourceFieldId);
+    if (!df) return null;
+    const dv = scalarLookup.get(`${rowId}|${df}`);
+    return dv && dv.trim().length > 0 ? dv : null;
+  };
 
   // Trace view shows row-to-row links only; cell-level source attachments are
   // surfaced on the document grid as chips and on the Sources page.
   const traceLinks: TraceLink[] = linkRows
     .filter((l): l is typeof l & { targetRowId: string } => Boolean(l.targetRowId))
-    .map((l) => {
-      const targetSheet = targetRowSheetById.get(l.targetRowId);
-      const df = targetSheet ? displayBySourceAndTargetSheet.get(`${l.sourceFieldId}|${targetSheet}`) : null;
-      const dv = df ? scalarLookup.get(`${l.targetRowId}|${df}`) : null;
-      return {
-        sourceRowId: l.sourceRowId,
-        sourceFieldId: l.sourceFieldId,
-        targetRowId: l.targetRowId,
-        targetDisplay: dv && dv.trim().length > 0 ? dv : null
-      };
-    });
+    .map((l) => ({
+      sourceRowId: l.sourceRowId,
+      sourceFieldId: l.sourceFieldId,
+      targetRowId: l.targetRowId,
+      sourceDisplay: resolveDisplay(l.sourceRowId, null),
+      targetDisplay: resolveDisplay(l.targetRowId, l.sourceFieldId)
+    }));
   const traceRows: TraceRow[] = rowRows.map((r) => ({
     id: r.id,
     visibleId: r.visibleId,
