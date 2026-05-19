@@ -561,14 +561,13 @@ export async function createField(
         (b): b is typeof b & { allowedSheetId: string } => b.allowedSheetId !== null
       );
       const sourceOnly = input.bindings.filter((b) => b.allowedSheetId === null && b.allowSources);
-      let acceptedSheetBound: typeof sheetBound = [];
+      const sheetDocByBindingId = new Map<string, string>();
       if (sheetBound.length > 0) {
         const validSheets = await tx
-          .select({ id: sheets.id })
+          .select({ id: sheets.id, documentId: sheets.documentId })
           .from(sheets)
           .where(
             and(
-              eq(sheets.documentId, sheet.documentId),
               isNull(sheets.deletedAt),
               inArray(
                 sheets.id,
@@ -576,13 +575,13 @@ export async function createField(
               )
             )
           );
-        const validIds = new Set(validSheets.map((s) => s.id));
-        acceptedSheetBound = sheetBound.filter((b) => validIds.has(b.allowedSheetId));
+        for (const s of validSheets) sheetDocByBindingId.set(s.id, s.documentId);
       }
+      const acceptedSheetBound = sheetBound.filter((b) => sheetDocByBindingId.has(b.allowedSheetId));
       const bindingRows = [
         ...acceptedSheetBound.map((b) => ({
           fieldId: field.id,
-          allowedDocumentId: sheet.documentId,
+          allowedDocumentId: sheetDocByBindingId.get(b.allowedSheetId) ?? sheet.documentId,
           allowedSheetId: b.allowedSheetId,
           allowSelfReference: b.allowSelfReference ?? false,
           displayFieldId: b.displayFieldId ?? null,
@@ -688,14 +687,13 @@ export async function updateField(
         const sourceOnly = input.bindings.filter(
           (b) => b.allowedSheetId === null && b.allowSources
         );
-        let acceptedSheetBound: typeof sheetBound = [];
+        const sheetDocByBindingId = new Map<string, string>();
         if (sheetBound.length > 0) {
           const validSheets = await tx
-            .select({ id: sheets.id })
+            .select({ id: sheets.id, documentId: sheets.documentId })
             .from(sheets)
             .where(
               and(
-                eq(sheets.documentId, sheet.documentId),
                 isNull(sheets.deletedAt),
                 inArray(
                   sheets.id,
@@ -703,13 +701,15 @@ export async function updateField(
                 )
               )
             );
-          const validIds = new Set(validSheets.map((s) => s.id));
-          acceptedSheetBound = sheetBound.filter((b) => validIds.has(b.allowedSheetId));
+          for (const s of validSheets) sheetDocByBindingId.set(s.id, s.documentId);
         }
+        const acceptedSheetBound = sheetBound.filter((b) =>
+          sheetDocByBindingId.has(b.allowedSheetId)
+        );
         const bindingRows = [
           ...acceptedSheetBound.map((b) => ({
             fieldId,
-            allowedDocumentId: sheet.documentId,
+            allowedDocumentId: sheetDocByBindingId.get(b.allowedSheetId) ?? sheet.documentId,
             allowedSheetId: b.allowedSheetId,
             allowSelfReference: b.allowSelfReference ?? false,
             displayFieldId: b.displayFieldId ?? null,
@@ -1322,13 +1322,23 @@ export async function listReferenceTargetsForField(fieldId: string) {
       rowId: rows.id,
       visibleId: rows.visibleId,
       sheetId: sheets.id,
-      sheetName: sheets.name
+      sheetName: sheets.name,
+      documentId: documents.id,
+      documentTitle: documents.title
     })
     .from(rows)
     .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+    .innerJoin(documents, eq(documents.id, sheets.documentId))
     .innerJoin(fields, and(eq(fields.sheetId, sheets.id), eq(fields.isIdField, true)));
 
-  let targets: { rowId: string; visibleId: string | null; sheetId: string; sheetName: string }[] = [];
+  let targets: {
+    rowId: string;
+    visibleId: string | null;
+    sheetId: string;
+    sheetName: string;
+    documentId: string;
+    documentTitle: string;
+  }[] = [];
   if (fieldBindings.length > 0) {
     const allowedSheetIds = fieldBindings
       .map((b) => b.allowedSheetId)
@@ -1338,7 +1348,6 @@ export async function listReferenceTargetsForField(fieldId: string) {
       targets = await baseQuery
         .where(
           and(
-            eq(sheets.documentId, sheet.documentId),
             isNull(rows.deletedAt),
             isNull(sheets.deletedAt),
             inArray(sheets.id, allowedSheetIds),

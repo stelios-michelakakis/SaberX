@@ -33,6 +33,8 @@ export type ReferenceTarget = {
   visibleId: string | null;
   sheetId: string | null;
   sheetName: string;
+  documentId?: string | null;
+  documentTitle?: string | null;
   display: string | null;
   kind?: "row" | "source";
   mimeType?: string | null;
@@ -591,7 +593,8 @@ function ReferenceEditor({
     return (
       (t.visibleId ?? "").toLowerCase().includes(q) ||
       (t.display ?? "").toLowerCase().includes(q) ||
-      t.sheetName.toLowerCase().includes(q)
+      t.sheetName.toLowerCase().includes(q) ||
+      (t.documentTitle ?? "").toLowerCase().includes(q)
     );
   });
 
@@ -712,7 +715,24 @@ function ReferenceEditor({
                     {t.visibleId ?? t.rowId.slice(0, 8)}
                   </span>
                 )}
-                <span style={{ color: "var(--ink-3)", marginLeft: "auto", fontSize: 11.5 }}>
+                <span
+                  style={{
+                    color: "var(--ink-3)",
+                    marginLeft: "auto",
+                    fontSize: 11.5,
+                    display: "inline-flex",
+                    alignItems: "baseline",
+                    gap: 6
+                  }}
+                >
+                  {t.documentTitle && (
+                    <span
+                      style={{ color: "var(--ink-4)", fontSize: 10.5 }}
+                      title={t.documentTitle}
+                    >
+                      {t.documentTitle} ·
+                    </span>
+                  )}
                   {t.sheetName}
                 </span>
               </button>

@@ -6,6 +6,12 @@ import { FIELD_TYPES } from "@/lib/constants";
 
 export type SheetOption = { id: string; name: string; sheetKind: string };
 
+type TreeDoc = {
+  id: string;
+  title: string;
+  sheets: { id: string; name: string; sheetKind: string }[];
+};
+
 export type FieldFormValue = {
   label: string;
   type: (typeof FIELD_TYPES)[number];
@@ -87,6 +93,37 @@ export function FieldFormFields({
     (s) => s.sheetKind !== "instructions" && s.sheetKind !== "glossary"
   );
 
+  const [tree, setTree] = useState<TreeDoc[] | null>(null);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!referenceMode) return;
+    let cancelled = false;
+    fetch("/api/reference-targets/tree")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Failed to load reference targets (${r.status})`);
+        const data = (await r.json()) as { documents: TreeDoc[] };
+        if (!cancelled) setTree(data.documents);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setTreeError(e.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [referenceMode]);
+
+  const sheetById = new Map<string, { id: string; name: string; documentTitle: string }>();
+  if (tree) {
+    for (const d of tree) {
+      for (const s of d.sheets) {
+        sheetById.set(s.id, { id: s.id, name: s.name, documentTitle: d.title });
+      }
+    }
+  }
+  for (const s of eligibleSheets) {
+    if (!sheetById.has(s.id)) sheetById.set(s.id, { id: s.id, name: s.name, documentTitle: "" });
+  }
+
   return (
     <>
       <FormLabel label="Label">
@@ -150,45 +187,33 @@ export function FieldFormFields({
           >
             Allowed reference targets
           </span>
-          {eligibleSheets.length === 0 ? (
+          {treeError && (
+            <div style={{ color: "var(--red)", fontSize: 12 }}>{treeError}</div>
+          )}
+          {!treeError && tree === null && (
+            <div style={{ color: "var(--ink-3)", fontSize: 12 }}>Loading…</div>
+          )}
+          {!treeError && tree !== null && tree.length === 0 && (
             <div style={{ color: "var(--ink-3)", fontSize: 12 }}>
-              No other sheets to reference yet — add a sheet first or leave empty to allow all.
-            </div>
-          ) : (
-            <div
-              style={{
-                border: "1px solid var(--line)",
-                borderRadius: 6,
-                padding: 8,
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                background: "var(--panel-2)"
-              }}
-            >
-              {eligibleSheets.map((s) => {
-                const active = value.bindings.some((b) => b.allowedSheetId === s.id);
-                const isSelf = s.id === currentSheetId;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => toggleSheet(s.id)}
-                    className={active ? "pill pill-accent" : "pill"}
-                    style={{ cursor: "pointer", border: "1px solid var(--line)" }}
-                    title={isSelf ? "Self-references (rows in this sheet)" : undefined}
-                  >
-                    {active ? <Icon name="check" size={12} /> : <Icon name="link" size={12} />}
-                    {s.name}
-                    {isSelf && <span style={{ opacity: 0.7, fontSize: 10 }}>(self)</span>}
-                  </button>
-                );
-              })}
+              No documents to reference yet.
             </div>
           )}
+          {!treeError && tree !== null && tree.length > 0 && (
+            <TreePicker
+              documents={tree}
+              currentSheetId={currentSheetId}
+              selected={new Set(
+                value.bindings
+                  .map((b) => b.allowedSheetId)
+                  .filter((id): id is string => Boolean(id))
+              )}
+              onToggle={toggleSheet}
+            />
+          )}
           <p style={{ margin: 0, color: "var(--ink-4)", fontSize: 11 }}>
-            Leave empty to allow references to any sheet in this document (excluding open
-            issues).
+            Leave empty to allow references to any sheet in <em>this</em> document. Pick
+            sheets from any document (including others) to restrict the picker to those
+            targets.
           </p>
           <span
             style={{
@@ -242,13 +267,16 @@ export function FieldFormFields({
               {value.bindings.map((b) => {
                 if (b.allowedSheetId === null) return null;
                 const sheetId = b.allowedSheetId;
-                const sheet = eligibleSheets.find((s) => s.id === sheetId);
+                const sheet = sheetById.get(sheetId);
                 if (!sheet) return null;
+                const label = sheet.documentTitle
+                  ? `${sheet.documentTitle} · ${sheet.name}`
+                  : sheet.name;
                 return (
                   <DisplayFieldRow
                     key={sheetId}
                     sheetId={sheetId}
-                    sheetName={sheet.name}
+                    sheetName={label}
                     value={b.displayFieldId}
                     onChange={(next) => setDisplayField(sheetId, next)}
                   />
@@ -366,6 +394,150 @@ function DisplayFieldRow({
           ))}
         </select>
       )}
+    </div>
+  );
+}
+
+function TreePicker({
+  documents,
+  currentSheetId,
+  selected,
+  onToggle
+}: {
+  documents: TreeDoc[];
+  currentSheetId: string;
+  selected: Set<string>;
+  onToggle: (sheetId: string) => void;
+}) {
+  const initialOpen = (): Set<string> => {
+    const open = new Set<string>();
+    for (const d of documents) {
+      const hasSelected = d.sheets.some((s) => selected.has(s.id));
+      const hasCurrent = d.sheets.some((s) => s.id === currentSheetId);
+      if (hasSelected || hasCurrent) open.add(d.id);
+    }
+    if (open.size === 0 && documents.length > 0) open.add(documents[0].id);
+    return open;
+  };
+  const [openDocs, setOpenDocs] = useState<Set<string>>(initialOpen);
+
+  const toggleDoc = (id: string) => {
+    setOpenDocs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--line)",
+        borderRadius: 6,
+        padding: 6,
+        background: "var(--panel-2)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        maxHeight: 280,
+        overflowY: "auto"
+      }}
+    >
+      {documents.map((doc) => {
+        const open = openDocs.has(doc.id);
+        const selectedCount = doc.sheets.filter((s) => selected.has(s.id)).length;
+        return (
+          <div key={doc.id} style={{ display: "flex", flexDirection: "column" }}>
+            <button
+              type="button"
+              onClick={() => toggleDoc(doc.id)}
+              aria-expanded={open}
+              style={{
+                all: "unset",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 6px",
+                borderRadius: 4,
+                fontSize: 12.5,
+                color: "var(--ink)"
+              }}
+            >
+              <Icon name={open ? "chevronD" : "chevronR"} size={11} />
+              <Icon name="docs" size={12} style={{ color: "var(--ink-3)" }} />
+              <span style={{ fontWeight: 500 }}>{doc.title}</span>
+              {selectedCount > 0 && (
+                <span
+                  className="pill pill-accent"
+                  style={{ marginLeft: "auto", fontSize: 10, padding: "0 6px" }}
+                >
+                  {selectedCount}
+                </span>
+              )}
+            </button>
+            {open && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, paddingLeft: 24 }}>
+                {doc.sheets.length === 0 && (
+                  <span style={{ color: "var(--ink-4)", fontSize: 11, padding: "4px 6px" }}>
+                    No referenceable sheets in this document.
+                  </span>
+                )}
+                {doc.sheets.map((s) => {
+                  const active = selected.has(s.id);
+                  const isSelf = s.id === currentSheetId;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onToggle(s.id)}
+                      style={{
+                        all: "unset",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        fontSize: 12.5,
+                        background: active ? "var(--accent-soft)" : "transparent",
+                        color: active ? "var(--ink)" : "var(--ink-2)"
+                      }}
+                      title={isSelf ? "Self-references (rows in this sheet)" : undefined}
+                    >
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 12,
+                          height: 12,
+                          border: "1px solid var(--line-strong)",
+                          borderRadius: 3,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          background: active ? "var(--sx-accent)" : "transparent",
+                          flex: "none"
+                        }}
+                      >
+                        {active && (
+                          <Icon name="check" size={10} style={{ color: "white" }} />
+                        )}
+                      </span>
+                      <span>{s.name}</span>
+                      {isSelf && (
+                        <span style={{ opacity: 0.7, fontSize: 10, color: "var(--ink-3)" }}>
+                          (self)
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
