@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireUser } from "@/services/auth";
 import { getSource } from "@/services/sources";
+import { ReferencesPanel } from "./references-panel";
 import { SourceHeader } from "./source-header";
 import { SourcePreview } from "./source-preview";
 
@@ -25,6 +26,7 @@ export default async function SourceDetailPage({
         sizeBytes={source.sizeBytes}
       />
       <SourcePreview id={source.id} filename={source.filename} />
+      <ReferencesPanel sourceId={source.id} initialCount={source.referenceCount} />
     </>
   );
 }

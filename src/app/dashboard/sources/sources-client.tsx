@@ -14,6 +14,7 @@ export type SourceVm = {
   sha256: string;
   uploadedBy: string | null;
   uploadedByUsername: string | null;
+  referenceCount: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -129,7 +130,13 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
     const r = await fetch(`/api/sources/${id}`, { method: "DELETE" });
     if (!r.ok) {
       const detail = await r.json().catch(() => ({}));
-      toast.error("Could not delete source", { detail: detail.error });
+      const referenced = typeof detail.error === "string" && /referenced by/i.test(detail.error);
+      toast.error("Could not delete source", {
+        detail: referenced
+          ? `${detail.error}. Open the source to see where it's used.`
+          : detail.error
+      });
+      if (referenced) router.push(`/dashboard/sources/${id}`);
       return;
     }
     toast.success("Source deleted");
@@ -215,6 +222,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
               <Th>Filename</Th>
               <Th>Type</Th>
               <Th align="right">Size</Th>
+              <Th align="right">Refs</Th>
               <Th>Uploaded by</Th>
               <Th>Uploaded</Th>
               <Th align="right"> </Th>
@@ -224,7 +232,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
             {filtered.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}
                 >
                   {sources.length === 0
@@ -267,6 +275,18 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
                   </Td>
                   <Td align="right" muted mono>
                     {formatSize(s.sizeBytes)}
+                  </Td>
+                  <Td align="right" muted mono>
+                    {s.referenceCount > 0 ? (
+                      <span
+                        className="pill pill-accent"
+                        title={`Referenced by ${s.referenceCount} cell(s)`}
+                      >
+                        {s.referenceCount}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </Td>
                   <Td muted>{s.uploadedByUsername ?? "—"}</Td>
                   <Td muted>{new Date(s.createdAt).toLocaleString()}</Td>

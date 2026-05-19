@@ -1,6 +1,14 @@
-import { and, desc, eq, ilike, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { cellValueLinks, sources, users } from "@/db/schema";
+import {
+  cellValueLinks,
+  documents,
+  fields,
+  rows,
+  sheets,
+  sources,
+  users
+} from "@/db/schema";
 import { writeAudit } from "./audit";
 import {
   ALLOWED_SOURCE_EXTENSIONS,
@@ -22,22 +30,37 @@ export type SourceVm = {
   sha256: string;
   uploadedBy: string | null;
   uploadedByUsername: string | null;
+  referenceCount: number;
   createdAt: string;
   updatedAt: string;
 };
 
-function toVm(row: {
-  id: string;
-  filename: string;
-  displayName: string | null;
-  mimeType: string;
-  sizeBytes: number;
-  sha256: string;
-  uploadedBy: string | null;
-  uploaderUsername: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}): SourceVm {
+export type SourceReferenceVm = {
+  documentId: string;
+  documentTitle: string;
+  sheetId: string;
+  sheetName: string;
+  rowId: string;
+  rowVisibleId: string | null;
+  fieldId: string;
+  fieldLabel: string;
+};
+
+function toVm(
+  row: {
+    id: string;
+    filename: string;
+    displayName: string | null;
+    mimeType: string;
+    sizeBytes: number;
+    sha256: string;
+    uploadedBy: string | null;
+    uploaderUsername: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  referenceCount = 0
+): SourceVm {
   return {
     id: row.id,
     filename: row.filename,
@@ -47,9 +70,35 @@ function toVm(row: {
     sha256: row.sha256,
     uploadedBy: row.uploadedBy,
     uploadedByUsername: row.uploaderUsername,
+    referenceCount,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
+}
+
+async function referenceCounts(sourceIds: string[]): Promise<Map<string, number>> {
+  if (sourceIds.length === 0) return new Map();
+  const counts = await db
+    .select({
+      sourceId: cellValueLinks.targetSourceId,
+      n: sql<number>`count(*)::int`
+    })
+    .from(cellValueLinks)
+    .where(
+      and(
+        isNotNull(cellValueLinks.targetSourceId),
+        sql`${cellValueLinks.targetSourceId} IN (${sql.join(
+          sourceIds.map((id) => sql`${id}`),
+          sql`, `
+        )})`
+      )
+    )
+    .groupBy(cellValueLinks.targetSourceId);
+  const map = new Map<string, number>();
+  for (const row of counts) {
+    if (row.sourceId) map.set(row.sourceId, Number(row.n));
+  }
+  return map;
 }
 
 const baseSelect = {
@@ -73,14 +122,15 @@ export async function listSources(filter: { q?: string } = {}): Promise<SourceVm
       sql`(${sources.filename} ILIKE ${term} OR ${sources.displayName} ILIKE ${term})`
     );
   }
-  const rows = await db
+  const sourceRows = await db
     .select(baseSelect)
     .from(sources)
     .leftJoin(users, eq(users.id, sources.uploadedBy))
     .where(and(...conds))
     .orderBy(desc(sources.createdAt))
     .limit(500);
-  return rows.map(toVm);
+  const counts = await referenceCounts(sourceRows.map((s) => s.id));
+  return sourceRows.map((s) => toVm(s, counts.get(s.id) ?? 0));
 }
 
 export async function getSource(id: string): Promise<SourceVm | null> {
@@ -90,7 +140,38 @@ export async function getSource(id: string): Promise<SourceVm | null> {
     .leftJoin(users, eq(users.id, sources.uploadedBy))
     .where(and(eq(sources.id, id), isNull(sources.deletedAt)))
     .limit(1);
-  return row ? toVm(row) : null;
+  if (!row) return null;
+  const counts = await referenceCounts([row.id]);
+  return toVm(row, counts.get(row.id) ?? 0);
+}
+
+export async function getSourceReferences(sourceId: string): Promise<SourceReferenceVm[]> {
+  const result = await db
+    .select({
+      documentId: documents.id,
+      documentTitle: documents.title,
+      sheetId: sheets.id,
+      sheetName: sheets.name,
+      rowId: rows.id,
+      rowVisibleId: rows.visibleId,
+      fieldId: fields.id,
+      fieldLabel: fields.label
+    })
+    .from(cellValueLinks)
+    .innerJoin(rows, eq(rows.id, cellValueLinks.sourceRowId))
+    .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+    .innerJoin(documents, eq(documents.id, sheets.documentId))
+    .innerJoin(fields, eq(fields.id, cellValueLinks.sourceFieldId))
+    .where(
+      and(
+        eq(cellValueLinks.targetSourceId, sourceId),
+        isNull(rows.deletedAt),
+        isNull(sheets.deletedAt),
+        isNull(documents.deletedAt)
+      )
+    )
+    .orderBy(asc(documents.title), asc(sheets.displayOrder), asc(rows.canonicalOrder));
+  return result;
 }
 
 export async function getSourceForDownload(id: string): Promise<{
