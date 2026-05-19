@@ -78,19 +78,27 @@ function toVm(
 
 async function referenceCounts(sourceIds: string[]): Promise<Map<string, number>> {
   if (sourceIds.length === 0) return new Map();
+  // Count only references that originate from a live cell — a row whose
+  // document or sheet has been soft-deleted no longer counts as a reference.
   const counts = await db
     .select({
       sourceId: cellValueLinks.targetSourceId,
       n: sql<number>`count(*)::int`
     })
     .from(cellValueLinks)
+    .innerJoin(rows, eq(rows.id, cellValueLinks.sourceRowId))
+    .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+    .innerJoin(documents, eq(documents.id, sheets.documentId))
     .where(
       and(
         isNotNull(cellValueLinks.targetSourceId),
         sql`${cellValueLinks.targetSourceId} IN (${sql.join(
           sourceIds.map((id) => sql`${id}`),
           sql`, `
-        )})`
+        )})`,
+        isNull(rows.deletedAt),
+        isNull(sheets.deletedAt),
+        isNull(documents.deletedAt)
       )
     )
     .groupBy(cellValueLinks.targetSourceId);
@@ -293,11 +301,24 @@ export async function deleteSource(actor: Actor, id: string): Promise<void> {
   if (!before) throw new Error("Source not found");
   if (before.deletedAt) return;
 
-  // Refuse deletion if the source is referenced by any cell.
+  // Refuse deletion only if a LIVE cell still references this source. A row
+  // whose document, sheet, or row itself has been soft-deleted is considered
+  // unreachable — its lingering link rows shouldn't block source cleanup.
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(cellValueLinks)
-    .where(and(eq(cellValueLinks.targetSourceId, id), isNotNull(cellValueLinks.targetSourceId)));
+    .innerJoin(rows, eq(rows.id, cellValueLinks.sourceRowId))
+    .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+    .innerJoin(documents, eq(documents.id, sheets.documentId))
+    .where(
+      and(
+        eq(cellValueLinks.targetSourceId, id),
+        isNotNull(cellValueLinks.targetSourceId),
+        isNull(rows.deletedAt),
+        isNull(sheets.deletedAt),
+        isNull(documents.deletedAt)
+      )
+    );
   if (Number(count) > 0) {
     throw new Error(`Source is referenced by ${count} cell(s); remove those references first`);
   }

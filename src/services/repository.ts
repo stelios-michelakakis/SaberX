@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, max, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   cellValueLinks,
@@ -900,7 +900,24 @@ export async function getSheetGrid(sheetId: string) {
         .leftJoin(rows, eq(rows.id, cellValueLinks.targetRowId))
         .leftJoin(sheets, eq(sheets.id, rows.sheetId))
         .leftJoin(sources, eq(sources.id, cellValueLinks.targetSourceId))
-        .where(inArray(cellValueLinks.sourceRowId, rowIds))
+        .where(
+          and(
+            inArray(cellValueLinks.sourceRowId, rowIds),
+            // Hide chips that point at a soft-deleted target. Row-links: the
+            // joined row/sheet must still be live; source-links: the source
+            // row must still be live. The dangling cell_value_links rows
+            // themselves are left in place so a future restore brings them
+            // back.
+            or(
+              and(
+                isNotNull(cellValueLinks.targetRowId),
+                isNull(rows.deletedAt),
+                isNull(sheets.deletedAt)
+              ),
+              and(isNotNull(cellValueLinks.targetSourceId), isNull(sources.deletedAt))
+            )
+          )
+        )
     : [];
 
   // Resolve per-binding display values. Map: `${sourceFieldId}|${targetSheetId}` -> displayFieldId.
@@ -1520,17 +1537,57 @@ export async function searchRepository(query: string) {
 }
 
 export async function impactAnalysis(operation: string, entityId: string) {
+  // A link only "blocks" deletion if its SOURCE row, sheet, and document are
+  // all still live — stale links left behind by previous soft-deletes don't
+  // count.
+  const liveInboundQuery = (predicate: ReturnType<typeof eq> | ReturnType<typeof inArray>) =>
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(cellValueLinks)
+      .innerJoin(rows, eq(rows.id, cellValueLinks.sourceRowId))
+      .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+      .innerJoin(documents, eq(documents.id, sheets.documentId))
+      .where(
+        and(
+          predicate,
+          isNull(rows.deletedAt),
+          isNull(sheets.deletedAt),
+          isNull(documents.deletedAt)
+        )
+      );
+
   if (operation === "row_delete") {
-    const inbound = await db.select().from(cellValueLinks).where(eq(cellValueLinks.targetRowId, entityId));
-    return { blocked: inbound.length > 0, blockers: inbound.length ? [`${inbound.length} inbound reference(s) must be removed first.`] : [], affectedLinks: inbound.length, snapshotRequired: inbound.length > 0 };
+    const [{ count }] = await liveInboundQuery(eq(cellValueLinks.targetRowId, entityId));
+    const n = Number(count ?? 0);
+    return {
+      blocked: n > 0,
+      blockers: n > 0 ? [`${n} inbound reference(s) must be removed first.`] : [],
+      affectedLinks: n,
+      snapshotRequired: n > 0
+    };
   }
   if (operation === "sheet_delete") {
     const [sheet] = await db.select().from(sheets).where(eq(sheets.id, entityId)).limit(1);
     if (!sheet) throw new Error("Sheet not found");
     if (sheet.isSystemReserved) return { blocked: true, blockers: ["Reserved sheets cannot be deleted in MVP."], affectedRows: 0, snapshotRequired: false };
     const sheetRows = await db.select({ id: rows.id }).from(rows).where(and(eq(rows.sheetId, entityId), isNull(rows.deletedAt)));
-    const inbound = sheetRows.length ? await db.select().from(cellValueLinks).where(inArray(cellValueLinks.targetRowId, sheetRows.map((row) => row.id))) : [];
-    return { blocked: inbound.length > 0, blockers: inbound.length ? [`${inbound.length} inbound reference(s) target rows in this sheet.`] : [], affectedRows: sheetRows.length, affectedLinks: inbound.length, snapshotRequired: true };
+    let n = 0;
+    if (sheetRows.length) {
+      const [{ count }] = await liveInboundQuery(
+        inArray(
+          cellValueLinks.targetRowId,
+          sheetRows.map((row) => row.id)
+        )
+      );
+      n = Number(count ?? 0);
+    }
+    return {
+      blocked: n > 0,
+      blockers: n > 0 ? [`${n} inbound reference(s) target rows in this sheet.`] : [],
+      affectedRows: sheetRows.length,
+      affectedLinks: n,
+      snapshotRequired: true
+    };
   }
   if (operation === "document_delete") {
     const sheetRows = await db.select({ id: sheets.id }).from(sheets).where(and(eq(sheets.documentId, entityId), isNull(sheets.deletedAt)));

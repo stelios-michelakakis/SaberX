@@ -638,7 +638,14 @@ function registerRowAndCellTools(server: McpServer, { user }: ActorContext) {
         .innerJoin(sheets, eq(sheets.id, rows.sheetId))
         .innerJoin(documents, eq(documents.id, sheets.documentId))
         .innerJoin(fields, eq(fields.id, cellValueLinks.sourceFieldId))
-        .where(and(eq(cellValueLinks.targetRowId, rowId), isNull(rows.deletedAt)));
+        .where(
+          and(
+            eq(cellValueLinks.targetRowId, rowId),
+            isNull(rows.deletedAt),
+            isNull(sheets.deletedAt),
+            isNull(documents.deletedAt)
+          )
+        );
       return jsonText({ count: incoming.length, references: incoming });
     }
   );
