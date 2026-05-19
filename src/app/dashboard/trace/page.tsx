@@ -1,3 +1,4 @@
+import { alias } from "drizzle-orm/pg-core";
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -23,6 +24,12 @@ export default async function TracePage({
   await requireUser();
   const { document: docFilter } = await searchParams;
 
+  const targetRows = alias(rows, "target_rows");
+  const sourceSheets = alias(sheets, "source_sheets");
+  const targetSheets = alias(sheets, "target_sheets");
+  const sourceDocs = alias(documents, "source_documents");
+  const targetDocs = alias(documents, "target_documents");
+
   const linkRows = await db
     .select({
       sourceRowId: cellValueLinks.sourceRowId,
@@ -33,7 +40,21 @@ export default async function TracePage({
     })
     .from(cellValueLinks)
     .innerJoin(rows, eq(rows.id, cellValueLinks.sourceRowId))
-    .where(isNull(rows.deletedAt))
+    .innerJoin(sourceSheets, eq(sourceSheets.id, rows.sheetId))
+    .innerJoin(sourceDocs, eq(sourceDocs.id, sourceSheets.documentId))
+    .innerJoin(targetRows, eq(targetRows.id, cellValueLinks.targetRowId))
+    .innerJoin(targetSheets, eq(targetSheets.id, targetRows.sheetId))
+    .innerJoin(targetDocs, eq(targetDocs.id, targetSheets.documentId))
+    .where(
+      and(
+        isNull(rows.deletedAt),
+        isNull(sourceSheets.deletedAt),
+        isNull(sourceDocs.deletedAt),
+        isNull(targetRows.deletedAt),
+        isNull(targetSheets.deletedAt),
+        isNull(targetDocs.deletedAt)
+      )
+    )
     .limit(2000);
 
   if (linkRows.length === 0) {
@@ -55,7 +76,11 @@ export default async function TracePage({
   }
 
   const allRowIds = Array.from(
-    new Set(linkRows.flatMap((l) => [l.sourceRowId, l.targetRowId]))
+    new Set(
+      linkRows
+        .flatMap((l) => [l.sourceRowId, l.targetRowId])
+        .filter((id): id is string => Boolean(id))
+    )
   );
   const rowRows = allRowIds.length
     ? await db
@@ -70,7 +95,14 @@ export default async function TracePage({
         .from(rows)
         .innerJoin(sheets, eq(sheets.id, rows.sheetId))
         .innerJoin(documents, eq(documents.id, sheets.documentId))
-        .where(sql`${rows.id} IN (${sql.join(allRowIds.map((id) => sql`${id}`), sql`, `)})`)
+        .where(
+          and(
+            inArray(rows.id, allRowIds),
+            isNull(rows.deletedAt),
+            isNull(sheets.deletedAt),
+            isNull(documents.deletedAt)
+          )
+        )
     : [];
 
   const sheetIds = Array.from(new Set(rowRows.map((r) => r.sheetId)));
@@ -85,7 +117,13 @@ export default async function TracePage({
         })
         .from(sheets)
         .innerJoin(documents, eq(documents.id, sheets.documentId))
-        .where(sql`${sheets.id} IN (${sql.join(sheetIds.map((id) => sql`${id}`), sql`, `)})`)
+        .where(
+          and(
+            inArray(sheets.id, sheetIds),
+            isNull(sheets.deletedAt),
+            isNull(documents.deletedAt)
+          )
+        )
     : [];
 
   const fieldIds = Array.from(new Set(linkRows.map((l) => l.sourceFieldId)));
@@ -99,8 +137,17 @@ export default async function TracePage({
   const [{ orphans }] = await db
     .select({ orphans: count() })
     .from(rows)
+    .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+    .innerJoin(documents, eq(documents.id, sheets.documentId))
     .leftJoin(cellValueLinks, eq(cellValueLinks.sourceRowId, rows.id))
-    .where(and(isNull(rows.deletedAt), isNull(cellValueLinks.sourceRowId)));
+    .where(
+      and(
+        isNull(rows.deletedAt),
+        isNull(sheets.deletedAt),
+        isNull(documents.deletedAt),
+        isNull(cellValueLinks.sourceRowId)
+      )
+    );
 
   // Resolve a display value per link. Priority:
   //   1. The per-binding displayFieldId chosen on the source field.
