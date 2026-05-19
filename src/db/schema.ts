@@ -427,13 +427,17 @@ export const sources = pgTable(
     sizeBytes: integer("size_bytes").notNull(),
     sha256: varchar("sha256", { length: 64 }).notNull(),
     storagePath: varchar("storage_path", { length: 320 }).notNull(),
+    displayName: varchar("display_name", { length: 320 }),
     uploadedBy: uuid("uploaded_by").references(() => users.id),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     ...timestamps
   },
   (table) => ({
-    sha256Idx: uniqueIndex("sources_sha256_unique").on(table.sha256),
+    sha256Idx: uniqueIndex("sources_sha256_unique")
+      .on(table.sha256)
+      .where(sql`${table.deletedAt} IS NULL`),
     filenameIdx: index("sources_filename_idx").on(table.filename),
+    displayNameIdx: index("sources_display_name_idx").on(table.displayName),
     uploadedByIdx: index("sources_uploaded_by_idx").on(table.uploadedBy),
     deletedIdx: index("sources_deleted_at_idx").on(table.deletedAt)
   })

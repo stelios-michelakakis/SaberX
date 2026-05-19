@@ -64,6 +64,13 @@
       "when": 1779111728306,
       "tag": "0008_stiff_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779186765662,
+      "tag": "0009_rich_kitty_pryde",
+      "breakpoints": true
     }
   ]
 }

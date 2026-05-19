@@ -893,6 +893,7 @@ export async function getSheetGrid(sheetId: string) {
           targetSheetId: rows.sheetId,
           targetSheetName: sheets.name,
           targetSourceFilename: sources.filename,
+          targetSourceDisplayName: sources.displayName,
           targetSourceMime: sources.mimeType
         })
         .from(cellValueLinks)
@@ -966,12 +967,13 @@ export async function getSheetGrid(sheetId: string) {
           .map((link) => {
             if (link.targetSourceId) {
               const filename = link.targetSourceFilename ?? "(missing)";
+              const label = link.targetSourceDisplayName?.trim() || filename;
               return {
                 id: link.targetSourceId,
                 kind: "source" as const,
-                label: filename,
-                display: filename,
-                visibleId: filename,
+                label,
+                display: label,
+                visibleId: label,
                 sheetId: null,
                 mimeType: link.targetSourceMime ?? null
               };
@@ -1304,7 +1306,7 @@ export async function listReferenceTargetsForField(fieldId: string) {
     ? await db
         .select({
           rowId: sources.id,
-          visibleId: sources.filename,
+          visibleId: sql<string>`coalesce(${sources.displayName}, ${sources.filename})`,
           sheetId: sql<string | null>`null::uuid`,
           sheetName: sql<string>`'Sources'`,
           kind: sql<string>`'source'`,
@@ -1312,7 +1314,7 @@ export async function listReferenceTargetsForField(fieldId: string) {
         })
         .from(sources)
         .where(isNull(sources.deletedAt))
-        .orderBy(asc(sources.filename))
+        .orderBy(asc(sql`coalesce(${sources.displayName}, ${sources.filename})`))
     : [];
 
   const baseQuery = db

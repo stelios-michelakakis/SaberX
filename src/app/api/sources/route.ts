@@ -25,9 +25,12 @@ export async function POST(request: Request) {
     if (file.size > SOURCE_MAX_BYTES) {
       throw new Error(`File too large (max ${SOURCE_MAX_BYTES} bytes)`);
     }
+    const displayNameRaw = form.get("displayName");
+    const displayName =
+      typeof displayNameRaw === "string" && displayNameRaw.trim() ? displayNameRaw.trim() : null;
     const filename = file.name;
     const buffer = Buffer.from(await file.arrayBuffer());
-    const source = await createSource(user, { filename, buffer });
+    const source = await createSource(user, { filename, buffer, displayName });
     return created({ source });
   } catch (error) {
     return mapError(error);

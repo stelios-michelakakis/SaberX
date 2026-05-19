@@ -8,6 +8,7 @@ import { useToast } from "@/components/saberx/toast";
 export type SourceVm = {
   id: string;
   filename: string;
+  displayName: string | null;
   mimeType: string;
   sizeBytes: number;
   sha256: string;
@@ -48,6 +49,8 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
   const [filter, setFilter] = useState("");
   const [uploading, setUploading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingName, setPendingName] = useState("");
 
   useEffect(() => {
     if (searchParams?.get("upload") === "1") {
@@ -66,7 +69,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
     setSources(data.sources);
   };
 
-  const onUpload = async (file: File) => {
+  const queueUpload = (file: File) => {
     if (file.size === 0) {
       toast.error("File is empty");
       return;
@@ -75,8 +78,26 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
       toast.error("File too large", { detail: `Max ${formatSize(MAX_BYTES)}` });
       return;
     }
+    setPendingFile(file);
+    // Pre-fill with the filename minus extension so users can shorten quickly.
+    const dot = file.name.lastIndexOf(".");
+    setPendingName(dot > 0 ? file.name.slice(0, dot) : file.name);
+  };
+
+  const cancelPending = () => {
+    setPendingFile(null);
+    setPendingName("");
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const confirmPending = async () => {
+    if (!pendingFile) return;
+    const file = pendingFile;
+    const displayName = pendingName.trim();
+
     setUploading(true);
-    const progressId = toast.info(`Uploading ${file.name}…`, {
+    setPendingFile(null);
+    const progressId = toast.info(`Uploading ${displayName || file.name}…`, {
       detail: formatSize(file.size),
       durationMs: 0,
       loading: true
@@ -84,6 +105,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (displayName) fd.append("displayName", displayName);
       const r = await fetch("/api/sources", { method: "POST", body: fd });
       toast.dismiss(progressId);
       if (!r.ok) {
@@ -91,13 +113,14 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
         toast.error("Upload failed", { detail: detail.error });
         return;
       }
-      toast.success(`Uploaded ${file.name}`);
+      toast.success(`Uploaded ${displayName || file.name}`);
       await refresh();
     } catch (err) {
       toast.dismiss(progressId);
       toast.error("Upload failed", { detail: (err as Error).message });
     } finally {
       setUploading(false);
+      setPendingName("");
       if (fileRef.current) fileRef.current.value = "";
     }
   };
@@ -120,6 +143,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
     return sources.filter(
       (s) =>
         s.filename.toLowerCase().includes(q) ||
+        (s.displayName ?? "").toLowerCase().includes(q) ||
         (s.uploadedByUsername ?? "").toLowerCase().includes(q)
     );
   }, [sources, filter]);
@@ -162,7 +186,7 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) onUpload(f);
+            if (f) queueUpload(f);
           }}
         />
         <button
@@ -224,8 +248,19 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
                         size={12}
                         style={{ color: "var(--accent-ink)", flex: "none" }}
                       />
-                      <span style={{ color: "var(--ink)", fontWeight: 500 }}>{s.filename}</span>
+                      <span style={{ color: "var(--ink)", fontWeight: 500 }}>
+                        {s.displayName?.trim() || s.filename}
+                      </span>
                     </span>
+                    {s.displayName?.trim() && (
+                      <div
+                        className="mono"
+                        style={{ color: "var(--ink-4)", fontSize: 10.5, marginTop: 2 }}
+                        title={s.filename}
+                      >
+                        {s.filename}
+                      </div>
+                    )}
                   </Td>
                   <Td muted>
                     <span className="pill">{ext.toUpperCase() || "?"}</span>
@@ -283,6 +318,79 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
         </table>
       </div>
 
+      {pendingFile && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={cancelPending}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 24
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--panel)",
+              color: "var(--ink)",
+              borderRadius: "var(--sx-radius-lg)",
+              width: "min(480px, 100%)",
+              padding: 18,
+              boxShadow: "var(--sx-shadow-lg)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Give this source a display name</div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+              {pendingFile.name} · {formatSize(pendingFile.size)} — the original filename is
+              kept for downloads. The display name is what shows up in reference chips and the
+              sidebar.
+            </div>
+            <input
+              className="input"
+              autoFocus
+              value={pendingName}
+              onChange={(e) => setPendingName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  confirmPending();
+                } else if (e.key === "Escape") {
+                  cancelPending();
+                }
+              }}
+              placeholder={pendingFile.name}
+              style={{ height: 32, padding: "4px 10px", fontSize: 13 }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                className="sx-btn sx-btn-sm"
+                onClick={cancelPending}
+                disabled={uploading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sx-btn sx-btn-primary sx-btn-sm"
+                onClick={confirmPending}
+                disabled={uploading || !pendingName.trim()}
+              >
+                <Icon name="upload" size={12} /> Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

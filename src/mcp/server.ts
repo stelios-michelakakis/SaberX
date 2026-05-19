@@ -34,7 +34,8 @@ import {
   deleteSource as deleteSourceService,
   getSource as getSourceService,
   getSourceForDownload as getSourceForDownloadService,
-  listSources as listSourcesService
+  listSources as listSourcesService,
+  renameSource as renameSourceService
 } from "@/services/sources";
 import { db } from "@/db";
 import {
@@ -1144,11 +1145,12 @@ function registerSourceTools(server: McpServer, { user }: ActorContext) {
         "Upload a source file. Provide either utf8 text content (for MD/TXT) or base64-encoded bytes (for PDF/DOCX). Filename's extension determines the type. Max 50 MB. Returns the created source; dedupes by sha256 when the same bytes already exist.",
       inputSchema: {
         filename: z.string().min(1).max(320),
+        displayName: z.string().max(320).optional(),
         contentBase64: z.string().optional(),
         contentText: z.string().optional()
       }
     },
-    async ({ filename, contentBase64, contentText }) => {
+    async ({ filename, displayName, contentBase64, contentText }) => {
       assertCanMutate(user);
       if (!contentBase64 && contentText == null) {
         return jsonError("Provide contentBase64 or contentText.");
@@ -1156,7 +1158,24 @@ function registerSourceTools(server: McpServer, { user }: ActorContext) {
       const buffer = contentBase64
         ? Buffer.from(contentBase64, "base64")
         : Buffer.from(contentText ?? "", "utf8");
-      const source = await createSourceService(user, { filename, buffer });
+      const source = await createSourceService(user, { filename, buffer, displayName });
+      return jsonText({ source });
+    }
+  );
+
+  server.registerTool(
+    "update_source",
+    {
+      description:
+        "Set or clear a source's display name (the human-friendly label shown in reference chips, the sources list, and the breadcrumb). The original filename and stored bytes are never modified. Pass null to clear and fall back to the filename. References auto-follow because they store the source UUID.",
+      inputSchema: {
+        sourceId: z.string().uuid(),
+        displayName: z.string().max(320).nullable()
+      }
+    },
+    async ({ sourceId, displayName }) => {
+      assertCanMutate(user);
+      const source = await renameSourceService(user, sourceId, displayName);
       return jsonText({ source });
     }
   );

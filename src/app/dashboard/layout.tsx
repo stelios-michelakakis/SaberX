@@ -34,7 +34,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         user={{ name: fullName, role: user.organization || "Member" }}
         integrityCount={issues.length}
         documents={docList}
-        sources={sourceList.slice(0, 50).map((s) => ({ id: s.id, title: s.filename }))}
+        sources={sourceList.slice(0, 50).map((s) => ({ id: s.id, title: s.displayName ?? s.filename }))}
         tutorialSeen={user.tutorialSeen}
       >
         {children}

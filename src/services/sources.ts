@@ -16,6 +16,7 @@ type Actor = { userId: string; username: string };
 export type SourceVm = {
   id: string;
   filename: string;
+  displayName: string | null;
   mimeType: string;
   sizeBytes: number;
   sha256: string;
@@ -28,6 +29,7 @@ export type SourceVm = {
 function toVm(row: {
   id: string;
   filename: string;
+  displayName: string | null;
   mimeType: string;
   sizeBytes: number;
   sha256: string;
@@ -39,6 +41,7 @@ function toVm(row: {
   return {
     id: row.id,
     filename: row.filename,
+    displayName: row.displayName,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     sha256: row.sha256,
@@ -52,6 +55,7 @@ function toVm(row: {
 const baseSelect = {
   id: sources.id,
   filename: sources.filename,
+  displayName: sources.displayName,
   mimeType: sources.mimeType,
   sizeBytes: sources.sizeBytes,
   sha256: sources.sha256,
@@ -63,7 +67,12 @@ const baseSelect = {
 
 export async function listSources(filter: { q?: string } = {}): Promise<SourceVm[]> {
   const conds = [isNull(sources.deletedAt)];
-  if (filter.q && filter.q.trim()) conds.push(ilike(sources.filename, `%${filter.q.trim()}%`));
+  if (filter.q && filter.q.trim()) {
+    const term = `%${filter.q.trim()}%`;
+    conds.push(
+      sql`(${sources.filename} ILIKE ${term} OR ${sources.displayName} ILIKE ${term})`
+    );
+  }
   const rows = await db
     .select(baseSelect)
     .from(sources)
@@ -104,7 +113,7 @@ export async function getSourceForDownload(id: string): Promise<{
 
 export async function createSource(
   actor: Actor,
-  input: { filename: string; buffer: Buffer }
+  input: { filename: string; buffer: Buffer; displayName?: string | null }
 ): Promise<SourceVm> {
   const extension = extensionFromFilename(input.filename);
   if (!extension) {
@@ -131,6 +140,7 @@ export async function createSource(
       sizeBytes: stored.sizeBytes,
       sha256: stored.sha256,
       storagePath: stored.storagePath,
+      displayName: input.displayName?.trim() || null,
       uploadedBy: actor.userId
     })
     .returning();
@@ -152,6 +162,49 @@ export async function createSource(
     .where(eq(sources.id, inserted.id))
     .limit(1);
   return toVm(vm);
+}
+
+export async function renameSource(
+  actor: Actor,
+  id: string,
+  nextDisplayName: string | null
+): Promise<SourceVm> {
+  const trimmed = nextDisplayName?.trim() ?? "";
+  const nextValue = trimmed.length === 0 ? null : trimmed;
+  if (nextValue && nextValue.length > 320) {
+    throw new Error("Display name too long (max 320 chars)");
+  }
+
+  const [before] = await db.select().from(sources).where(eq(sources.id, id)).limit(1);
+  if (!before || before.deletedAt) throw new Error("Source not found");
+
+  if (nextValue === before.displayName) {
+    const current = await getSource(id);
+    if (!current) throw new Error("Source not found");
+    return current;
+  }
+
+  await db
+    .update(sources)
+    .set({ displayName: nextValue, updatedAt: new Date() })
+    .where(eq(sources.id, id));
+
+  await writeAudit({
+    actor: { id: actor.userId, username: actor.username },
+    actionType: "SOURCE_UPDATE",
+    entityType: "source",
+    entityId: id,
+    before: { displayName: before.displayName, filename: before.filename },
+    after: { displayName: nextValue, filename: before.filename },
+    summary: nextValue
+      ? `Renamed source ${before.filename} → ${nextValue}`
+      : `Cleared display name for source ${before.filename}`,
+    sourceType: "UI"
+  });
+
+  const updated = await getSource(id);
+  if (!updated) throw new Error("Source vanished after rename");
+  return updated;
 }
 
 export async function deleteSource(actor: Actor, id: string): Promise<void> {
