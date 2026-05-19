@@ -77,12 +77,20 @@ export async function detectDocumentReferences(documentId: string): Promise<Dete
     return { documentId, columns: [] };
   }
   const prefixes = Array.from(new Set(policies.map((p) => p.prefix.trim()).filter(Boolean)));
-  // Match `PREFIX-123` or `PREFIX123` or `PREFIX 123` (case-insensitive,
+  const prefixGroup = prefixes.map(escapeForRegex).join("|");
+  // Single-token: `PREFIX-123` / `PREFIX123` / `PREFIX 123` (case-insensitive,
   // anchored at word-ish boundaries).
-  const tokenRegex = new RegExp(
-    `\\b(${prefixes.map(escapeForRegex).join("|")})[\\s-]?(\\d+)\\b`,
+  const tokenRegex = new RegExp(`\\b(${prefixGroup})[\\s-]?(\\d+)\\b`, "gi");
+  // Range: `UC-01 to UC-07`, `UC-01 - UC-07`, `UC-01 – UC-07`, or the same
+  // prefix dropped on the right side (`UC-01 to 07`). The trailing prefix is
+  // optional; when present it must equal the leading prefix to count as a
+  // range — otherwise both ends are picked up as separate single tokens.
+  const rangeRegex = new RegExp(
+    `\\b(${prefixGroup})[\\s-]?(\\d+)\\s*(?:to|through|thru|[-–—])\\s*(?:(${prefixGroup})[\\s-]?)?(\\d+)\\b`,
     "gi"
   );
+  // Hard cap so a typo like `UC-1 to UC-99999` doesn't expand to 100k tokens.
+  const MAX_RANGE_EXPANSION = 200;
 
   // 2. Load all live rows that could match — keyed by normalized visibleId.
   const allRows = await db
@@ -172,29 +180,70 @@ export async function detectDocumentReferences(documentId: string): Promise<Dete
     const text = cell.valueText ?? "";
     if (!text.trim()) continue;
     const tokens: DetectedToken[] = [];
-    tokenRegex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = tokenRegex.exec(text)) !== null) {
-      const raw = match[0];
+    // Intervals (text spans) already claimed by a range match — single-token
+    // scan skips anything that overlaps these so we don't double-count the
+    // endpoints.
+    const consumedRanges: { start: number; end: number }[] = [];
+
+    const sheetTally =
+      occurrenceCounts.get(cell.fieldId) ??
+      (() => {
+        const m = new Map<string, number>();
+        occurrenceCounts.set(cell.fieldId, m);
+        return m;
+      })();
+    const addToken = (raw: string, start: number, end: number) => {
       const norm = normalizeVisibleId(raw);
       const allCandidates = candidatesByNormalized.get(norm) ?? [];
-      // Filter self-references: don't suggest a cell points at its own row.
       const candidates = allCandidates.filter((c) => c.rowId !== cell.rowId);
-      tokens.push({ token: raw, start: match.index, end: match.index + raw.length, candidates });
-
-      // Tally per-field per-target-sheet for binding suggestions.
-      const sheetTally =
-        occurrenceCounts.get(cell.fieldId) ??
-        (() => {
-          const m = new Map<string, number>();
-          occurrenceCounts.set(cell.fieldId, m);
-          return m;
-        })();
+      tokens.push({ token: raw, start, end, candidates });
       for (const c of candidates) {
         sheetTally.set(c.sheetId, (sheetTally.get(c.sheetId) ?? 0) + 1);
       }
+    };
+
+    // 4a. Range pass.
+    rangeRegex.lastIndex = 0;
+    let rangeMatch: RegExpExecArray | null;
+    while ((rangeMatch = rangeRegex.exec(text)) !== null) {
+      const [whole, leftPrefix, leftNumStr, rightPrefixRaw, rightNumStr] = rangeMatch;
+      const leftNum = Number(leftNumStr);
+      const rightNum = Number(rightNumStr);
+      // If a right-side prefix was given, it must equal the left-side prefix
+      // (case-insensitive) — otherwise treat both ends as independent tokens.
+      if (rightPrefixRaw && rightPrefixRaw.toUpperCase() !== leftPrefix.toUpperCase()) continue;
+      if (!Number.isFinite(leftNum) || !Number.isFinite(rightNum)) continue;
+      const lo = Math.min(leftNum, rightNum);
+      const hi = Math.max(leftNum, rightNum);
+      if (hi - lo + 1 > MAX_RANGE_EXPANSION) continue;
+      // Pad based on whichever endpoint has the most leading zeros, so
+      // `UC-01 to UC-12` expands to 2-digit codes (UC-01..UC-12).
+      const pad = Math.max(leftNumStr.length, rightNumStr.length);
+      const start = rangeMatch.index;
+      const end = start + whole.length;
+      consumedRanges.push({ start, end });
+      for (let n = lo; n <= hi; n += 1) {
+        const numStr = String(n).padStart(pad, "0");
+        const synthetic = `${leftPrefix.toUpperCase()}-${numStr}`;
+        addToken(synthetic, start, end);
+      }
     }
+
+    // 4b. Single-token pass.
+    tokenRegex.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = tokenRegex.exec(text)) !== null) {
+      const start = match.index;
+      const end = start + match[0].length;
+      const overlapped = consumedRanges.some((r) => start < r.end && end > r.start);
+      if (overlapped) continue;
+      addToken(match[0], start, end);
+    }
+
     if (tokens.length === 0) continue;
+    // Stable order by text position; range expansions share the same range so
+    // they cluster naturally next to each other.
+    tokens.sort((a, b) => a.start - b.start);
 
     const list = byField.get(cell.fieldId) ?? [];
     list.push({
