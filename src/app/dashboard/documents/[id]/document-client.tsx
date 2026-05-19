@@ -393,17 +393,6 @@ export function DocumentClient({
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--ink-3)",
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                marginBottom: 4
-              }}
-            >
-              {(document.templateType || "Document").toUpperCase()}
-            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <InlineTitle
                 documentId={document.id}
