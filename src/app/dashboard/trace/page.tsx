@@ -244,24 +244,54 @@ export default async function TracePage({
     for (const s of scalarRows) scalarLookup.set(`${s.rowId}|${s.fieldId}`, s.displayText);
   }
 
-  const resolveDisplay = (rowId: string, sourceFieldId: string | null): string | null => {
+  // Resolve labels for the chosen display fields, so the table can show
+  // "Field name: value" rather than just the bare value.
+  const displayFieldIdsUsed = new Set<string>();
+  for (const f of candidateFields) {
+    if (defaultDisplayBySheet.get(f.sheetId) === f.id) displayFieldIdsUsed.add(f.id);
+  }
+  for (const fieldId of bindingDisplayBySourceAndTargetSheet.values()) {
+    displayFieldIdsUsed.add(fieldId);
+  }
+  const displayFieldLabelById = new Map<string, string>();
+  if (displayFieldIdsUsed.size > 0) {
+    const labelRows = await db
+      .select({ id: fields.id, label: fields.label })
+      .from(fields)
+      .where(inArray(fields.id, Array.from(displayFieldIdsUsed)));
+    for (const r of labelRows) displayFieldLabelById.set(r.id, r.label);
+  }
+
+  const resolveDisplay = (
+    rowId: string,
+    sourceFieldId: string | null
+  ): { value: string | null; fieldLabel: string | null } => {
     const df = resolveDisplayFieldId(rowId, sourceFieldId);
-    if (!df) return null;
+    if (!df) return { value: null, fieldLabel: null };
     const dv = scalarLookup.get(`${rowId}|${df}`);
-    return dv && dv.trim().length > 0 ? dv : null;
+    return {
+      value: dv && dv.trim().length > 0 ? dv : null,
+      fieldLabel: displayFieldLabelById.get(df) ?? null
+    };
   };
 
   // Trace view shows row-to-row links only; cell-level source attachments are
   // surfaced on the document grid as chips and on the Sources page.
   const traceLinks: TraceLink[] = linkRows
     .filter((l): l is typeof l & { targetRowId: string } => Boolean(l.targetRowId))
-    .map((l) => ({
-      sourceRowId: l.sourceRowId,
-      sourceFieldId: l.sourceFieldId,
-      targetRowId: l.targetRowId,
-      sourceDisplay: resolveDisplay(l.sourceRowId, null),
-      targetDisplay: resolveDisplay(l.targetRowId, l.sourceFieldId)
-    }));
+    .map((l) => {
+      const src = resolveDisplay(l.sourceRowId, null);
+      const tgt = resolveDisplay(l.targetRowId, l.sourceFieldId);
+      return {
+        sourceRowId: l.sourceRowId,
+        sourceFieldId: l.sourceFieldId,
+        targetRowId: l.targetRowId,
+        sourceDisplay: src.value,
+        sourceDisplayField: src.fieldLabel,
+        targetDisplay: tgt.value,
+        targetDisplayField: tgt.fieldLabel
+      };
+    });
   const traceRows: TraceRow[] = rowRows.map((r) => ({
     id: r.id,
     visibleId: r.visibleId,

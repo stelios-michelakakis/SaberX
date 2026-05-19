@@ -10,7 +10,9 @@ export type TraceLink = {
   sourceFieldId: string;
   targetRowId: string;
   sourceDisplay?: string | null;
+  sourceDisplayField?: string | null;
   targetDisplay?: string | null;
+  targetDisplayField?: string | null;
 };
 
 export type TraceRow = {
@@ -48,20 +50,23 @@ export function TraceClient({
   initialDocumentId: string;
 }) {
   const [mode, setMode] = useState<Mode>("graph");
-  const [documentId, setDocumentId] = useState(initialDocumentId);
+  const [sourceDocId, setSourceDocId] = useState(initialDocumentId);
+  const [targetDocId, setTargetDocId] = useState("");
 
   const rowMap = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const sheetMap = useMemo(() => new Map(sheets.map((s) => [s.id, s])), [sheets]);
   const fieldMap = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
 
   const filteredLinks = useMemo(() => {
-    if (!documentId) return links;
+    if (!sourceDocId && !targetDocId) return links;
     return links.filter((l) => {
       const src = rowMap.get(l.sourceRowId);
       const tgt = rowMap.get(l.targetRowId);
-      return src?.documentId === documentId || tgt?.documentId === documentId;
+      const matchSrc = !sourceDocId || src?.documentId === sourceDocId;
+      const matchTgt = !targetDocId || tgt?.documentId === targetDocId;
+      return matchSrc && matchTgt;
     });
-  }, [links, documentId, rowMap]);
+  }, [links, sourceDocId, targetDocId, rowMap]);
 
   return (
     <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -113,31 +118,27 @@ export function TraceClient({
           ))}
         </div>
         <Icon name="filter" size={12} style={{ color: "var(--ink-3)", marginLeft: 6 }} />
-        <select
-          className="select"
-          value={documentId}
-          onChange={(e) => setDocumentId(e.target.value)}
-          style={{
-            height: 30,
-            minHeight: 0,
-            width: "auto",
-            minWidth: 220,
-            fontSize: 12.5,
-            padding: "4px 28px 4px 10px"
-          }}
-        >
-          <option value="">All documents</option>
-          {documents.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.title}
-            </option>
-          ))}
-        </select>
-        {documentId && (
+        <DocFilter
+          label="Source"
+          value={sourceDocId}
+          onChange={setSourceDocId}
+          documents={documents}
+        />
+        <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
+        <DocFilter
+          label="Target"
+          value={targetDocId}
+          onChange={setTargetDocId}
+          documents={documents}
+        />
+        {(sourceDocId || targetDocId) && (
           <button
             type="button"
             className="sx-btn sx-btn-sm"
-            onClick={() => setDocumentId("")}
+            onClick={() => {
+              setSourceDocId("");
+              setTargetDocId("");
+            }}
           >
             <Icon name="x" size={12} /> Clear
           </button>
@@ -159,7 +160,7 @@ export function TraceClient({
           links={filteredLinks}
           rowMap={rowMap}
           sheetMap={sheetMap}
-          documentFilterId={documentId || null}
+          documentFilterId={sourceDocId || targetDocId || null}
         />
       )}
     </div>
@@ -214,29 +215,11 @@ function TraceTable({
             return (
               <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                 <Td>
-                  {link.sourceDisplay ? (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "baseline",
-                        gap: 6,
-                        fontSize: 12
-                      }}
-                    >
-                      <span style={{ color: "var(--ink)" }}>{link.sourceDisplay}</span>
-                      <span
-                        className="mono"
-                        style={{ color: "var(--ink-3)", fontSize: 11 }}
-                        title="Row ID"
-                      >
-                        {src?.visibleId || link.sourceRowId.slice(0, 8)}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
-                      {src?.visibleId || link.sourceRowId.slice(0, 8)}
-                    </span>
-                  )}
+                  <DisplayCell
+                    display={link.sourceDisplay}
+                    displayField={link.sourceDisplayField}
+                    visibleId={src?.visibleId || link.sourceRowId.slice(0, 8)}
+                  />
                 </Td>
                 <Td muted>
                   {srcSheet ? (
@@ -258,31 +241,13 @@ function TraceTable({
                   {tgt ? (
                     <Link
                       href={`/dashboard/documents/${tgt.documentId}?sheet=${tgt.sheetId}`}
-                      style={{
-                        color: "var(--accent-ink)",
-                        textDecoration: "none",
-                        fontSize: 12,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6
-                      }}
+                      style={{ color: "inherit", textDecoration: "none" }}
                     >
-                      {link.targetDisplay ? (
-                        <>
-                          <span style={{ color: "var(--ink)" }}>{link.targetDisplay}</span>
-                          <span
-                            className="mono"
-                            style={{ color: "var(--ink-3)", fontSize: 11 }}
-                            title="Row ID"
-                          >
-                            {tgt.visibleId || link.targetRowId.slice(0, 8)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="mono" style={{ fontSize: 11.5 }}>
-                          {tgt.visibleId || link.targetRowId.slice(0, 8)}
-                        </span>
-                      )}
+                      <DisplayCell
+                        display={link.targetDisplay}
+                        displayField={link.targetDisplayField}
+                        visibleId={tgt.visibleId || link.targetRowId.slice(0, 8)}
+                      />
                     </Link>
                   ) : (
                     <span className="mono" style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
@@ -297,6 +262,89 @@ function TraceTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function DisplayCell({
+  display,
+  displayField,
+  visibleId
+}: {
+  display?: string | null;
+  displayField?: string | null;
+  visibleId: string;
+}) {
+  if (display) {
+    return (
+      <span style={{ display: "inline-flex", flexDirection: "column", lineHeight: 1.2 }}>
+        <span style={{ color: "var(--ink)", fontSize: 12.5 }}>
+          {displayField && (
+            <span style={{ color: "var(--ink-4)", fontSize: 11, marginRight: 4 }}>
+              {displayField}:
+            </span>
+          )}
+          {display}
+        </span>
+        <span
+          className="mono"
+          style={{ color: "var(--ink-3)", fontSize: 10.5 }}
+          title="Row ID"
+        >
+          {visibleId}
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="mono" style={{ color: "var(--accent-ink)", fontSize: 11.5 }}>
+      {visibleId}
+    </span>
+  );
+}
+
+function DocFilter({
+  label,
+  value,
+  onChange,
+  documents
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  documents: { id: string; title: string }[];
+}) {
+  return (
+    <label
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 11.5,
+        color: "var(--ink-3)"
+      }}
+    >
+      <span style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <select
+        className="select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          height: 28,
+          minHeight: 0,
+          width: "auto",
+          minWidth: 180,
+          fontSize: 12.5,
+          padding: "2px 26px 2px 8px"
+        }}
+      >
+        <option value="">All documents</option>
+        {documents.map((d) => (
+          <option key={d.id} value={d.id}>
+            {d.title}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
