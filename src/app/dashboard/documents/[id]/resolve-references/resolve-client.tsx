@@ -168,7 +168,7 @@ export function ResolveReferencesClient({
         return;
       }
       const summary = (await r.json()) as {
-        createdFields: { newFieldLabel: string }[];
+        convertedFields: { fieldLabel: string }[];
         cellsWritten: number;
         warnings?: { message: string }[];
       };
@@ -177,7 +177,7 @@ export function ResolveReferencesClient({
         toast.error(
           `Applied with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}`,
           {
-            detail: `Created ${summary.createdFields.length} column(s), ${summary.cellsWritten} cell(s). First warning: ${warnings[0].message}`,
+            detail: `Converted ${summary.convertedFields.length} column(s), ${summary.cellsWritten} cell(s). First warning: ${warnings[0].message}`,
             durationMs: 12000
           }
         );
@@ -186,8 +186,8 @@ export function ResolveReferencesClient({
         console.warn("[resolve-references] warnings:", warnings);
         return;
       }
-      toast.success(`Created ${summary.createdFields.length} link column(s)`, {
-        detail: `${summary.cellsWritten} cell link(s) written. New columns are appended to the right of each sheet.`
+      toast.success(`Converted ${summary.convertedFields.length} column(s) to references`, {
+        detail: `${summary.cellsWritten} cell link(s) written.`
       });
       router.push(`/dashboard/documents/${documentId}`);
       router.refresh();
