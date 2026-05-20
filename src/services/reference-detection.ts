@@ -32,6 +32,11 @@ export type DetectedCell = {
   rowVisibleId: string | null;
   rawText: string;
   tokens: DetectedToken[];
+  // When the cell's text is a bare "All" (case-insensitive), the apply step
+  // expands this to every live row in the column's selected target sheets.
+  // Only surfaced when the column has at least one cell with detected tokens
+  // — a column of pure "All" values can't be inferred.
+  isAll?: boolean;
 };
 
 export type DetectedColumn = {
@@ -253,6 +258,28 @@ export async function detectDocumentReferences(documentId: string): Promise<Dete
       tokens
     });
     byField.set(cell.fieldId, list);
+  }
+
+  // 4c. "All" pass: for any field that already has at least one cell with
+  //     detected tokens, surface sibling cells whose value is a bare "All"
+  //     (or "ALL" / "all", optionally trailing punctuation). These will be
+  //     expanded to every live row in the chosen target sheets at apply time.
+  const ALL_REGEX = /^\s*all\s*[.!]?\s*$/i;
+  for (const cell of scalarRows) {
+    if (!byField.has(cell.fieldId)) continue; // skip fields with no real hits
+    const text = cell.valueText ?? "";
+    if (!ALL_REGEX.test(text)) continue;
+    // Avoid double-adding if the cell somehow already has tokens (shouldn't
+    // happen with the current regex, but cheap safety).
+    const list = byField.get(cell.fieldId)!;
+    if (list.some((c) => c.rowId === cell.rowId)) continue;
+    list.push({
+      rowId: cell.rowId,
+      rowVisibleId: visibleByRowId.get(cell.rowId) ?? null,
+      rawText: text,
+      tokens: [],
+      isAll: true
+    });
   }
 
   const sheetMetaById = new Map<string, { sheetName: string; documentId: string; documentTitle: string }>();

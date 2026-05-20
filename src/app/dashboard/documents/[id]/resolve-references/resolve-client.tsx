@@ -27,6 +27,7 @@ type DetectedCell = {
   rowVisibleId: string | null;
   rawText: string;
   tokens: DetectedToken[];
+  isAll?: boolean;
 };
 
 type DetectedColumn = {
@@ -58,6 +59,9 @@ type ColumnDecision = {
   selectedSheets: Set<string>;
   // tokenKey = `${rowId}|${tokenIndex}` → rowId picked (or null = skip this token).
   picks: Map<string, string | null>;
+  // Source rowIds whose cell text was "All" and that the user wants expanded
+  // to every live row in the column's target sheets at apply time.
+  expandAllRows: Set<string>;
 };
 
 export function ResolveReferencesClient({
@@ -105,7 +109,10 @@ export function ResolveReferencesClient({
               }
             });
           }
-          seed.set(col.fieldId, { skip: false, selectedSheets: sheets, picks });
+          const expandAllRows = new Set<string>(
+            col.cells.filter((c) => c.isAll).map((c) => c.rowId)
+          );
+          seed.set(col.fieldId, { skip: false, selectedSheets: sheets, picks, expandAllRows });
         }
         setDecisions(seed);
       })
@@ -143,7 +150,11 @@ export function ResolveReferencesClient({
             const picked = d.picks.get(key);
             if (picked && !pickedRowIds.includes(picked)) pickedRowIds.push(picked);
           });
-          return { rowId: cell.rowId, pickedRowIds };
+          return {
+            rowId: cell.rowId,
+            pickedRowIds,
+            expandAll: cell.isAll === true && d.expandAllRows.has(cell.rowId)
+          };
         });
         return {
           fieldId: col.fieldId,
@@ -403,6 +414,13 @@ function Column({
       next.set(key, rowId);
       return { ...d, picks: next };
     });
+  const toggleExpandAll = (rowId: string) =>
+    onChange((d) => {
+      const next = new Set(d.expandAllRows);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return { ...d, expandAllRows: next };
+    });
 
   return (
     <div
@@ -429,6 +447,10 @@ function Column({
           {column.totalTokens} tokens in {column.cellsWithTokens}/{column.totalCells} cells
           {column.ambiguousTokens > 0 && ` · ${column.ambiguousTokens} ambiguous`}
           {column.unresolvedTokens > 0 && ` · ${column.unresolvedTokens} unresolved`}
+          {(() => {
+            const n = column.cells.filter((c) => c.isAll).length;
+            return n > 0 ? ` · ${n} "All"` : "";
+          })()}
         </span>
         <button
           type="button"
@@ -507,6 +529,13 @@ function Column({
                     </Td>
                     <Td>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {cell.isAll && (
+                          <AllPicker
+                            active={decision.expandAllRows.has(cell.rowId)}
+                            targetCount={decision.selectedSheets.size}
+                            onToggle={() => toggleExpandAll(cell.rowId)}
+                          />
+                        )}
                         {cell.tokens.map((tok, idx) => {
                           const key = `${cell.rowId}|${idx}`;
                           const picked = decision.picks.get(key) ?? null;
@@ -528,6 +557,37 @@ function Column({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function AllPicker({
+  active,
+  targetCount,
+  onToggle
+}: {
+  active: boolean;
+  targetCount: number;
+  onToggle: () => void;
+}) {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+      <span className={active ? "pill pill-accent" : "pill"} title="Cell text was 'All'">
+        All
+      </span>
+      <span style={{ color: "var(--ink-3)" }}>→</span>
+      <span style={{ color: "var(--ink-2)" }}>
+        every live row in the {targetCount === 1 ? "selected target sheet" : `${targetCount} selected target sheets`}
+      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="sx-btn sx-btn-ghost sx-btn-sm"
+        style={{ padding: "2px 6px" }}
+        title={active ? "Skip this cell" : "Expand to all rows"}
+      >
+        {active ? "Skip" : "Expand"}
+      </button>
     </div>
   );
 }

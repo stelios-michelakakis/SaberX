@@ -10,8 +10,10 @@ export type ResolveColumnDecision = {
   fieldId: string;
   // Sheets the column should be bound to. Required.
   targetSheetIds: string[];
-  // Per source-row decisions. Each picks 0+ target row IDs.
-  cellPicks: { rowId: string; pickedRowIds: string[] }[];
+  // Per source-row decisions. Each picks 0+ target row IDs; when expandAll
+  // is true the picked IDs are ignored and the cell is populated with every
+  // live row in the column's target sheets.
+  cellPicks: { rowId: string; pickedRowIds: string[]; expandAll?: boolean }[];
 };
 
 export type ResolveSummary = {
@@ -76,7 +78,7 @@ export async function applyDetectedReferences(
         }
         return true;
       });
-      return { rowId: cell.rowId, pickedRowIds: kept };
+      return { rowId: cell.rowId, pickedRowIds: kept, expandAll: cell.expandAll === true };
     });
     if (droppedPicks > 0) {
       summary.warnings.push({
@@ -85,7 +87,12 @@ export async function applyDetectedReferences(
       });
     }
 
-    const cellsWithPicks = filteredCellPicks.filter((c) => c.pickedRowIds.length > 0);
+    // A cell counts as actionable if it has any explicit picks OR is flagged
+    // as an "All" expansion (which will be materialised against the column's
+    // target sheets at write-time).
+    const cellsWithPicks = filteredCellPicks.filter(
+      (c) => c.pickedRowIds.length > 0 || c.expandAll
+    );
     if (cellsWithPicks.length === 0) {
       summary.warnings.push({
         sourceFieldId: decision.fieldId,
@@ -148,6 +155,24 @@ export async function applyDetectedReferences(
         continue;
       }
 
+      // Pre-compute the "All" expansion: every live row across the column's
+      // selected target sheets. Self-references are filtered per-cell below.
+      const hasExpandAll = cellsWithPicks.some((c) => c.expandAll);
+      let allRowsByTarget: { id: string; sheetId: string }[] = [];
+      if (hasExpandAll) {
+        allRowsByTarget = await db
+          .select({ id: rows.id, sheetId: rows.sheetId })
+          .from(rows)
+          .innerJoin(sheets, eq(sheets.id, rows.sheetId))
+          .where(
+            and(
+              inArray(rows.sheetId, validTargets),
+              isNull(rows.deletedAt),
+              isNull(sheets.deletedAt)
+            )
+          );
+      }
+
       // Snapshot the existing scalar text so we can store it in the audit
       // entry — gives the user a paper trail if a cell had prose that gets
       // dropped during conversion.
@@ -203,7 +228,22 @@ export async function applyDetectedReferences(
         fieldLabel: sourceField.label
       });
 
-      for (const cell of cellsWithPicks) {
+      // A cell either has explicit picks OR is an "All"-expansion. expandAll
+      // cells get written using every live row in the column's target sheets
+      // (minus the cell's own row to avoid a row referencing itself).
+      const cellsToWrite = cellsWithPicks
+        .map((cell) => {
+          if (cell.expandAll) {
+            const rowIds = allRowsByTarget
+              .filter((r) => r.id !== cell.rowId)
+              .map((r) => r.id);
+            return { rowId: cell.rowId, pickedRowIds: rowIds };
+          }
+          return { rowId: cell.rowId, pickedRowIds: cell.pickedRowIds };
+        })
+        .filter((c) => c.pickedRowIds.length > 0);
+
+      for (const cell of cellsToWrite) {
         try {
           await patchCell(user, cell.rowId, {
             fieldId: sourceField.id,

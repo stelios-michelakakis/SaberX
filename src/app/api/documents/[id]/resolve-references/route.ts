@@ -11,7 +11,8 @@ const schema = z.object({
       cellPicks: z.array(
         z.object({
           rowId: z.string().uuid(),
-          pickedRowIds: z.array(z.string().uuid())
+          pickedRowIds: z.array(z.string().uuid()),
+          expandAll: z.boolean().optional()
         })
       )
     })
