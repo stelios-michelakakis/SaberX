@@ -167,9 +167,27 @@ export function ResolveReferencesClient({
         toast.error("Failed to apply", { detail: detail.error });
         return;
       }
-      const summary = (await r.json()) as { createdFields: { newFieldLabel: string }[]; cellsWritten: number };
+      const summary = (await r.json()) as {
+        createdFields: { newFieldLabel: string }[];
+        cellsWritten: number;
+        warnings?: { message: string }[];
+      };
+      const warnings = summary.warnings ?? [];
+      if (warnings.length > 0) {
+        toast.error(
+          `Applied with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}`,
+          {
+            detail: `Created ${summary.createdFields.length} column(s), ${summary.cellsWritten} cell(s). First warning: ${warnings[0].message}`,
+            durationMs: 12000
+          }
+        );
+        // Don't navigate away — the user needs to be able to inspect what
+        // didn't apply.
+        console.warn("[resolve-references] warnings:", warnings);
+        return;
+      }
       toast.success(`Created ${summary.createdFields.length} link column(s)`, {
-        detail: `${summary.cellsWritten} cell link(s) written.`
+        detail: `${summary.cellsWritten} cell link(s) written. New columns are appended to the right of each sheet.`
       });
       router.push(`/dashboard/documents/${documentId}`);
       router.refresh();
