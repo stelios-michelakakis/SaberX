@@ -113,6 +113,9 @@ export function Topbar({
           | { document?: { id: string; title: string } }
           | null;
         toast.success(`Imported ${file.name}`);
+        // Invalidate cached RSC payloads BEFORE navigating, so the
+        // destination always re-renders from the server with the new doc.
+        router.refresh();
         const newDocId = payload?.document?.id;
         if (newDocId) {
           // Walk the user through any detected cross-references in a wizard
@@ -122,7 +125,6 @@ export function Topbar({
         } else {
           router.push("/dashboard");
         }
-        router.refresh();
       } else {
         const fd = new FormData();
         fd.append("file", file);
@@ -134,8 +136,10 @@ export function Topbar({
           return;
         }
         toast.success(`Uploaded ${file.name}`);
-        router.push("/dashboard/sources");
+        // Invalidate the cached Sources RSC payload BEFORE navigating, so the
+        // destination always re-renders from the server with the new row.
         router.refresh();
+        router.push("/dashboard/sources");
       }
     } catch (err) {
       toast.dismiss(progressId);
