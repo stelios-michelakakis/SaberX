@@ -109,8 +109,19 @@ export function Topbar({
           toast.error("Import failed", { detail: text.slice(0, 200) });
           return;
         }
+        const payload = (await res.json().catch(() => null)) as
+          | { document?: { id: string; title: string } }
+          | null;
         toast.success(`Imported ${file.name}`);
-        router.push("/dashboard");
+        const newDocId = payload?.document?.id;
+        if (newDocId) {
+          // Walk the user through any detected cross-references in a wizard
+          // before landing on the new document. If detection finds nothing
+          // the wizard shows an empty state with a back link.
+          router.push(`/dashboard/documents/${newDocId}/resolve-references?wizard=1`);
+        } else {
+          router.push("/dashboard");
+        }
         router.refresh();
       } else {
         const fd = new FormData();
