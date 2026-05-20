@@ -215,14 +215,34 @@ function TraceTable({
             return (
               <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
                 <Td>
-                  <DisplayCell
-                    display={link.sourceDisplay}
-                    displayField={link.sourceDisplayField}
-                    visibleId={src?.visibleId || link.sourceRowId.slice(0, 8)}
-                  />
+                  {src ? (
+                    <Link
+                      href={rowHref(src.documentId, src.sheetId, src.id, link.sourceFieldId)}
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      <DisplayCell
+                        display={link.sourceDisplay}
+                        displayField={link.sourceDisplayField}
+                        visibleId={src.visibleId || link.sourceRowId.slice(0, 8)}
+                      />
+                    </Link>
+                  ) : (
+                    <DisplayCell
+                      display={link.sourceDisplay}
+                      displayField={link.sourceDisplayField}
+                      visibleId={link.sourceRowId.slice(0, 8)}
+                    />
+                  )}
                 </Td>
                 <Td muted>
-                  {srcSheet ? (
+                  {srcSheet && src ? (
+                    <Link
+                      href={rowHref(srcSheet.documentId, srcSheet.id, src.id, link.sourceFieldId)}
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {srcSheet.documentTitle} · {srcSheet.name}
+                    </Link>
+                  ) : srcSheet ? (
                     <Link
                       href={`/dashboard/documents/${srcSheet.documentId}?sheet=${srcSheet.id}`}
                       style={{ color: "inherit", textDecoration: "none" }}
@@ -240,7 +260,7 @@ function TraceTable({
                 <Td>
                   {tgt ? (
                     <Link
-                      href={`/dashboard/documents/${tgt.documentId}?sheet=${tgt.sheetId}`}
+                      href={rowHref(tgt.documentId, tgt.sheetId, tgt.id, null)}
                       style={{ color: "inherit", textDecoration: "none" }}
                     >
                       <DisplayCell
@@ -255,7 +275,18 @@ function TraceTable({
                     </span>
                   )}
                 </Td>
-                <Td muted>{tgt ? `${tgt.documentTitle} · ${tgt.sheetName}` : "—"}</Td>
+                <Td muted>
+                  {tgt ? (
+                    <Link
+                      href={rowHref(tgt.documentId, tgt.sheetId, tgt.id, null)}
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {tgt.documentTitle} · {tgt.sheetName}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </Td>
               </tr>
             );
           })}
@@ -300,6 +331,21 @@ function DisplayCell({
       {visibleId}
     </span>
   );
+}
+
+function rowHref(
+  documentId: string,
+  sheetId: string,
+  rowId: string,
+  fieldId: string | null
+): string {
+  const params = new URLSearchParams({
+    sheet: sheetId,
+    flash: "1",
+    focusRow: rowId
+  });
+  if (fieldId) params.set("focusField", fieldId);
+  return `/dashboard/documents/${documentId}?${params.toString()}`;
 }
 
 function DocFilter({

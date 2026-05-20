@@ -416,7 +416,7 @@ function Column({
         return (
           <Link
             key={r.id}
-            href={`/dashboard/documents/${r.documentId}?sheet=${r.sheetId}`}
+            href={`/dashboard/documents/${r.documentId}?sheet=${r.sheetId}&flash=1&focusRow=${r.id}`}
             ref={(el) => assignRef(r.id, el)}
             onMouseEnter={() => onHover(r.id)}
             onMouseLeave={() => onHover(null)}
