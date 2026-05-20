@@ -181,8 +181,6 @@ export function Sidebar({ user, integrityCount = 0, documents = [], sources = []
                   collapsed={collapsed}
                   open={sourcesOpen}
                   onToggle={() => setSourcesOpen((v) => !v)}
-                  onAdd={() => router.push("/dashboard/sources?upload=1")}
-                  addLabel="Upload source"
                 />
                 {!collapsed && sourcesOpen && sources.length > 0 && (
                   <ChildList
@@ -292,8 +290,8 @@ function ExpandableNavRow({
   collapsed: boolean;
   open: boolean;
   onToggle: () => void;
-  onAdd: () => void;
-  addLabel: string;
+  onAdd?: () => void;
+  addLabel?: string;
   tour: string;
 }) {
   return (
@@ -348,12 +346,12 @@ function ExpandableNavRow({
         )}
         {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
       </Link>
-      {!collapsed && (
+      {!collapsed && onAdd && (
         <button
           type="button"
           onClick={onAdd}
-          aria-label={addLabel}
-          title={addLabel}
+          aria-label={addLabel ?? "Add"}
+          title={addLabel ?? "Add"}
           className="sx-btn sx-btn-ghost sx-btn-sm"
           style={{ padding: 4 }}
         >
