@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/components/saberx/icon";
 import { useToast } from "@/components/saberx/toast";
 
@@ -38,11 +38,17 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const refresh = async () => {
-    const r = await fetch("/api/sources");
+    const r = await fetch("/api/sources", { cache: "no-store" });
     if (!r.ok) return;
     const data = (await r.json()) as { sources: SourceVm[] };
     setSources(data.sources);
   };
+
+  // Re-fetch when the user lands on the page (covers post-upload navigation
+  // where the cached RSC payload might still be stale).
+  useEffect(() => {
+    void refresh();
+  }, []);
 
   const onDelete = async (id: string) => {
     const r = await fetch(`/api/sources/${id}`, { method: "DELETE" });
@@ -60,6 +66,8 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
     toast.success("Source deleted");
     setConfirmDeleteId(null);
     await refresh();
+    // Also re-render the layout so the sidebar's sources list drops the row.
+    router.refresh();
   };
 
   return (
@@ -102,7 +110,8 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
                   colSpan={7}
                   style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}
                 >
-                  No sources yet. Use the <strong>Import</strong> button in the top bar to upload a PDF, DOCX, MD, or TXT.
+                  No sources yet. Use the <strong>Import</strong> button in the top bar to upload a
+                  PDF, DOCX, MD, TXT, Excel workbook, or image.
                 </td>
               </tr>
             )}

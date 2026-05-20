@@ -18,7 +18,8 @@ export default async function SourcesPage() {
           fontSize: 12.5
         }}
       >
-        Upload PDF, DOCX, Markdown, or plain text files and reference them from any document cell.
+        Upload PDF, DOCX, Markdown, plain text, Excel, or image files and reference them from any
+        document cell.
       </div>
       <SourcesClient initialSources={sources} />
     </>

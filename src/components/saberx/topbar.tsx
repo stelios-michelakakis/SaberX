@@ -128,13 +128,13 @@ export function Topbar({
           | { document?: { id: string; title: string } }
           | null;
         toast.success(`Imported ${file.name}`);
-        router.refresh();
         const newDocId = payload?.document?.id;
         if (newDocId) {
           router.push(`/dashboard/documents/${newDocId}/resolve-references?wizard=1`);
         } else {
           router.push("/dashboard");
         }
+        router.refresh();
       } else {
         const fd = new FormData();
         fd.append("file", file);
@@ -146,8 +146,12 @@ export function Topbar({
           return;
         }
         toast.success(`Uploaded ${file.name}`);
-        router.refresh();
+        // Push first so the user sees the destination, THEN refresh so the
+        // layout + the sources list re-fetch fresh data from the server.
+        // Reversing the order races: refresh runs against the source page,
+        // push then navigates and may serve the stale client cache.
         router.push("/dashboard/sources");
+        router.refresh();
       }
     } catch (err) {
       toast.dismiss(progressId);
