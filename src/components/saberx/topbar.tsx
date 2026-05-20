@@ -30,7 +30,12 @@ export function Topbar({
   const toast = useToast();
   const [importing, setImporting] = useState(false);
   const [undoing, setUndoing] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const importWrapRef = useRef<HTMLDivElement>(null);
+  // Two separate hidden file inputs so each "Import as ..." choice has the
+  // right accept attribute and we don't need to validate after the fact.
+  const docFileRef = useRef<HTMLInputElement>(null);
+  const sourceFileRef = useRef<HTMLInputElement>(null);
 
   const runUndo = async () => {
     if (undoing) return;
@@ -74,32 +79,42 @@ export function Topbar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  const onImport = async (file: File) => {
+  const clearFileInputs = () => {
+    if (docFileRef.current) docFileRef.current.value = "";
+    if (sourceFileRef.current) sourceFileRef.current.value = "";
+  };
+
+  const onImport = async (file: File, mode: "document" | "source") => {
     const name = file.name.toLowerCase();
-    const isWorkbook = name.endsWith(".xlsx") || name.endsWith(".xlsm");
-    const isSource =
-      name.endsWith(".pdf") ||
-      name.endsWith(".docx") ||
-      name.endsWith(".md") ||
-      name.endsWith(".txt");
-    if (!isWorkbook && !isSource) {
-      toast.error("Unsupported file type", {
-        detail: "Excel workbooks (.xlsx, .xlsm) import as documents. PDF/DOCX/MD/TXT upload as sources."
-      });
-      if (fileRef.current) fileRef.current.value = "";
-      return;
+    if (mode === "document") {
+      if (!name.endsWith(".xlsx") && !name.endsWith(".xlsm")) {
+        toast.error("Unsupported file type", {
+          detail: "Documents must be Excel workbooks (.xlsx or .xlsm)."
+        });
+        clearFileInputs();
+        return;
+      }
+    } else {
+      const allowed = [".pdf", ".docx", ".md", ".txt", ".xlsx", ".xlsm", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
+      if (!allowed.some((ext) => name.endsWith(ext))) {
+        toast.error("Unsupported source type", {
+          detail: "Sources can be PDF, DOCX, MD, TXT, Excel, or common image formats."
+        });
+        clearFileInputs();
+        return;
+      }
     }
 
     setImporting(true);
     const sizeKb = Math.max(1, Math.round(file.size / 1024));
     const sizeLabel = sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
     const progressId = toast.info(`Uploading ${file.name}…`, {
-      detail: `${sizeLabel} — ${isWorkbook ? "parsing as a document" : "saving as a source"}`,
+      detail: `${sizeLabel} — ${mode === "document" ? "parsing as a document" : "saving as a source"}`,
       durationMs: 0,
       loading: true
     });
     try {
-      if (isWorkbook) {
+      if (mode === "document") {
         const fd = new FormData();
         fd.append("file", file);
         const res = await fetch("/api/import-jobs", { method: "POST", body: fd });
@@ -113,14 +128,9 @@ export function Topbar({
           | { document?: { id: string; title: string } }
           | null;
         toast.success(`Imported ${file.name}`);
-        // Invalidate cached RSC payloads BEFORE navigating, so the
-        // destination always re-renders from the server with the new doc.
         router.refresh();
         const newDocId = payload?.document?.id;
         if (newDocId) {
-          // Walk the user through any detected cross-references in a wizard
-          // before landing on the new document. If detection finds nothing
-          // the wizard shows an empty state with a back link.
           router.push(`/dashboard/documents/${newDocId}/resolve-references?wizard=1`);
         } else {
           router.push("/dashboard");
@@ -136,8 +146,6 @@ export function Topbar({
           return;
         }
         toast.success(`Uploaded ${file.name}`);
-        // Invalidate the cached Sources RSC payload BEFORE navigating, so the
-        // destination always re-renders from the server with the new row.
         router.refresh();
         router.push("/dashboard/sources");
       }
@@ -146,9 +154,21 @@ export function Topbar({
       toast.error("Upload failed", { detail: (err as Error).message });
     } finally {
       setImporting(false);
-      if (fileRef.current) fileRef.current.value = "";
+      clearFileInputs();
     }
   };
+
+  // Close the import dropdown when clicking outside.
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (importWrapRef.current && !importWrapRef.current.contains(e.target as Node)) {
+        setImportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [importMenuOpen]);
 
   return (
     <div
@@ -278,31 +298,118 @@ export function Topbar({
         <HelpMenu firstDocumentId={firstDocumentId} tutorialSeen={tutorialSeen} />
         <div style={{ width: 1, height: 18, background: "var(--line)", margin: "0 4px" }} />
         <input
-          ref={fileRef}
+          ref={docFileRef}
           type="file"
-          accept=".xlsx,.xlsm,.pdf,.docx,.md,.txt"
+          accept=".xlsx,.xlsm"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
-            if (f) onImport(f);
+            if (f) onImport(f, "document");
           }}
         />
-        <button
-          className="sx-btn sx-btn-sm"
-          onClick={() => fileRef.current?.click()}
-          disabled={importing}
-          type="button"
-          data-tour="topbar-import"
-          title="Excel (.xlsx/.xlsm) imports as a document; PDF/DOCX/MD/TXT uploads as a source"
-        >
-          {importing ? (
-            <Icon name="spinner" size={12} className="spin" />
-          ) : (
-            <Icon name="upload" size={12} />
+        <input
+          ref={sourceFileRef}
+          type="file"
+          accept=".pdf,.docx,.md,.txt,.xlsx,.xlsm,.png,.jpg,.jpeg,.gif,.webp"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onImport(f, "source");
+          }}
+        />
+        <div ref={importWrapRef} style={{ position: "relative" }}>
+          <button
+            className="sx-btn sx-btn-sm"
+            onClick={() => setImportMenuOpen((v) => !v)}
+            disabled={importing}
+            type="button"
+            data-tour="topbar-import"
+            aria-haspopup="menu"
+            aria-expanded={importMenuOpen}
+          >
+            {importing ? (
+              <Icon name="spinner" size={12} className="spin" />
+            ) : (
+              <Icon name="upload" size={12} />
+            )}
+            {importing ? "Uploading…" : "Import"}
+            <Icon name="chevronD" size={10} style={{ marginLeft: 2, opacity: 0.7 }} />
+          </button>
+          {importMenuOpen && !importing && (
+            <div
+              role="menu"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                right: 0,
+                minWidth: 240,
+                background: "var(--panel)",
+                border: "1px solid var(--line)",
+                borderRadius: 10,
+                boxShadow:
+                  "0 1px 0 rgba(0,0,0,0.04), 0 8px 24px -8px rgba(0,0,0,0.2), 0 16px 48px -12px rgba(0,0,0,0.22)",
+                padding: 4,
+                zIndex: 60
+              }}
+            >
+              <ImportMenuItem
+                title="Import document"
+                detail="Excel workbook (.xlsx / .xlsm)"
+                onClick={() => {
+                  setImportMenuOpen(false);
+                  docFileRef.current?.click();
+                }}
+              />
+              <ImportMenuItem
+                title="Import source"
+                detail="PDF, DOCX, MD, TXT, Excel, or image"
+                onClick={() => {
+                  setImportMenuOpen(false);
+                  sourceFileRef.current?.click();
+                }}
+              />
+            </div>
           )}
-          {importing ? "Uploading…" : "Import"}
-        </button>
+        </div>
       </div>
     </div>
+  );
+}
+
+function ImportMenuItem({
+  title,
+  detail,
+  onClick
+}: {
+  title: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      style={{
+        all: "unset",
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+        padding: "8px 10px",
+        borderRadius: 6,
+        width: "100%",
+        boxSizing: "border-box"
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "var(--bg-2)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "transparent";
+      }}
+    >
+      <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--ink)" }}>{title}</span>
+      <span style={{ fontSize: 11, color: "var(--ink-3)" }}>{detail}</span>
+    </button>
   );
 }

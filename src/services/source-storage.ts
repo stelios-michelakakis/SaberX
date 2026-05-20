@@ -6,14 +6,33 @@ const STORAGE_ROOT = resolve(process.env.SOURCE_STORAGE_ROOT ?? "/app/var/source
 
 export const SOURCE_MAX_BYTES = Number(process.env.SOURCE_MAX_BYTES ?? 50 * 1024 * 1024);
 
-export const ALLOWED_SOURCE_EXTENSIONS = ["pdf", "docx", "md", "txt"] as const;
+export const ALLOWED_SOURCE_EXTENSIONS = [
+  "pdf",
+  "docx",
+  "md",
+  "txt",
+  "xlsx",
+  "xlsm",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp"
+] as const;
 export type AllowedExtension = (typeof ALLOWED_SOURCE_EXTENSIONS)[number];
 
 export const MIME_BY_EXTENSION: Record<AllowedExtension, string> = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   md: "text/markdown",
-  txt: "text/plain"
+  txt: "text/plain",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xlsm: "application/vnd.ms-excel.sheet.macroenabled.12",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp"
 };
 
 export function extensionFromFilename(filename: string): AllowedExtension | null {
