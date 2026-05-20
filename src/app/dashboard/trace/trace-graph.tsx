@@ -15,6 +15,55 @@ type Line = {
   y2: number;
 };
 
+type SheetGridPayload = {
+  fields: {
+    id: string;
+    label: string;
+    slug: string;
+    type: string;
+    isIdField: boolean;
+    archived: boolean;
+  }[];
+  rows: { id: string; cells: Record<string, unknown> }[];
+};
+
+type SheetDetail = {
+  fields: { id: string; label: string; slug: string; type: string }[];
+  rowsById: Map<string, Record<string, unknown>>;
+};
+
+function toSheetDetail(g: SheetGridPayload): SheetDetail {
+  const fields = g.fields
+    .filter((f) => !f.isIdField && !f.archived)
+    .map((f) => ({ id: f.id, label: f.label, slug: f.slug, type: f.type }));
+  const rowsById = new Map<string, Record<string, unknown>>();
+  for (const r of g.rows) rowsById.set(r.id, r.cells);
+  return { fields, rowsById };
+}
+
+function readCellText(
+  cells: Record<string, unknown> | undefined,
+  field: { id: string; slug: string }
+): string {
+  if (!cells) return "";
+  const raw = cells[field.id] ?? cells[field.slug];
+  if (raw == null || raw === "") return "";
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => {
+        if (item == null) return "";
+        if (typeof item === "object" && "label" in (item as object)) {
+          return (item as { label?: unknown }).label ?? "";
+        }
+        return String(item);
+      })
+      .filter((s) => s !== "")
+      .join(", ");
+  }
+  if (typeof raw === "object") return JSON.stringify(raw);
+  return String(raw);
+}
+
 export function TraceGraph({
   links,
   rowMap,
@@ -73,6 +122,51 @@ export function TraceGraph({
   const [rightSheetId, setRightSheetId] = useState<string>(
     defaultPair?.tgt ?? eligibleTargetSheets[0]?.id ?? ""
   );
+
+  // Lazy-loaded per-side: the sheet's fields + a map of rowId → cell values.
+  // Lets us render arbitrary field values inside each row card.
+  const [leftDetail, setLeftDetail] = useState<SheetDetail | null>(null);
+  const [rightDetail, setRightDetail] = useState<SheetDetail | null>(null);
+  const [leftSelectedFields, setLeftSelectedFields] = useState<Set<string>>(new Set());
+  const [rightSelectedFields, setRightSelectedFields] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!leftSheetId) {
+      setLeftDetail(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/sheets/${leftSheetId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((g: SheetGridPayload | null) => {
+        if (cancelled || !g) return;
+        setLeftDetail(toSheetDetail(g));
+        setLeftSelectedFields(new Set());
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [leftSheetId]);
+
+  useEffect(() => {
+    if (!rightSheetId) {
+      setRightDetail(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/sheets/${rightSheetId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((g: SheetGridPayload | null) => {
+        if (cancelled || !g) return;
+        setRightDetail(toSheetDetail(g));
+        setRightSelectedFields(new Set());
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [rightSheetId]);
 
   // Re-default if the user changes filters and the chosen sheet is no longer eligible.
   useEffect(() => {
@@ -259,6 +353,45 @@ export function TraceGraph({
       </div>
 
       <div
+        style={{
+          padding: "8px 14px",
+          borderBottom: "1px solid var(--line)",
+          background: "var(--panel)",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 18
+        }}
+      >
+        <FieldTagRow
+          label="Show source fields"
+          fields={leftDetail?.fields ?? []}
+          selected={leftSelectedFields}
+          onToggle={(id) =>
+            setLeftSelectedFields((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+        />
+        <FieldTagRow
+          label="Show target fields"
+          fields={rightDetail?.fields ?? []}
+          selected={rightSelectedFields}
+          onToggle={(id) =>
+            setRightSelectedFields((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          alignRight
+        />
+      </div>
+
+      <div
         ref={containerRef}
         style={{
           position: "relative",
@@ -273,6 +406,8 @@ export function TraceGraph({
           title={leftSheet ? `${leftSheet.documentTitle} · ${leftSheet.name}` : "Source"}
           rows={leftRows}
           side="left"
+          detail={leftDetail}
+          selectedFieldIds={leftSelectedFields}
           isHighlighted={isRowHighlighted}
           onHover={setHoverRowId}
           assignRef={(id, el) => leftRefs.current.set(id, el)}
@@ -282,6 +417,8 @@ export function TraceGraph({
           title={rightSheet ? `${rightSheet.documentTitle} · ${rightSheet.name}` : "Target"}
           rows={rightRows}
           side="right"
+          detail={rightDetail}
+          selectedFieldIds={rightSelectedFields}
           isHighlighted={isRowHighlighted}
           onHover={setHoverRowId}
           assignRef={(id, el) => rightRefs.current.set(id, el)}
@@ -381,6 +518,8 @@ function Column({
   title,
   rows,
   side,
+  detail,
+  selectedFieldIds,
   isHighlighted,
   onHover,
   assignRef
@@ -388,10 +527,15 @@ function Column({
   title: string;
   rows: TraceRow[];
   side: "left" | "right";
+  detail: SheetDetail | null;
+  selectedFieldIds: Set<string>;
   isHighlighted: (rowId: string) => boolean;
   onHover: (id: string | null) => void;
   assignRef: (id: string, el: HTMLElement | null) => void;
 }) {
+  const selectedFields = detail
+    ? detail.fields.filter((f) => selectedFieldIds.has(f.id))
+    : [];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div
@@ -413,6 +557,7 @@ function Column({
       )}
       {rows.map((r) => {
         const active = isHighlighted(r.id);
+        const cells = detail?.rowsById.get(r.id);
         return (
           <Link
             key={r.id}
@@ -422,9 +567,8 @@ function Column({
             onMouseLeave={() => onHover(null)}
             style={{
               display: "flex",
-              flexDirection: side === "left" ? "row" : "row-reverse",
-              alignItems: "center",
-              gap: 8,
+              flexDirection: "column",
+              gap: 4,
               padding: "8px 12px",
               borderRadius: 6,
               border: "1px solid",
@@ -433,43 +577,143 @@ function Column({
               color: "var(--ink-2)",
               textDecoration: "none",
               fontSize: 12.5,
-              transition: "background 0.12s, border-color 0.12s"
+              transition: "background 0.12s, border-color 0.12s",
+              alignItems: side === "left" ? "stretch" : "stretch"
             }}
           >
-            <span
-              className="mono"
+            <div
               style={{
-                color: "var(--accent-ink)",
-                fontSize: 11.5,
-                fontWeight: 500
+                display: "flex",
+                flexDirection: side === "left" ? "row" : "row-reverse",
+                alignItems: "center",
+                gap: 8
               }}
             >
-              {r.visibleId ?? r.id.slice(0, 8)}
-            </span>
-            <span
-              style={{
-                color: "var(--ink-3)",
-                fontSize: 11.5,
-                marginLeft: side === "left" ? "auto" : undefined,
-                marginRight: side === "right" ? "auto" : undefined,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: 160
-              }}
-            >
-              {r.sheetName}
-            </span>
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: active ? "var(--sx-accent)" : "var(--line-strong)",
-                flex: "none"
-              }}
-            />
+              <span
+                className="mono"
+                style={{
+                  color: "var(--accent-ink)",
+                  fontSize: 11.5,
+                  fontWeight: 500
+                }}
+              >
+                {r.visibleId ?? r.id.slice(0, 8)}
+              </span>
+              <span style={{ flex: 1 }} />
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: active ? "var(--sx-accent)" : "var(--line-strong)",
+                  flex: "none"
+                }}
+              />
+            </div>
+            {selectedFields.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  textAlign: side === "left" ? "left" : "right"
+                }}
+              >
+                {selectedFields.map((f) => {
+                  const value = readCellText(cells, f);
+                  if (!value) return null;
+                  return (
+                    <div
+                      key={f.id}
+                      style={{
+                        fontSize: 11,
+                        color: "var(--ink-2)",
+                        lineHeight: 1.35,
+                        display: "flex",
+                        flexDirection: side === "left" ? "row" : "row-reverse",
+                        alignItems: "baseline",
+                        gap: 6
+                      }}
+                    >
+                      <span style={{ color: "var(--ink-4)", flex: "none", fontSize: 10.5 }}>
+                        {f.label}:
+                      </span>
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          flex: 1
+                        }}
+                        title={value}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function FieldTagRow({
+  label,
+  fields,
+  selected,
+  onToggle,
+  alignRight
+}: {
+  label: string;
+  fields: { id: string; label: string }[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  alignRight?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        flexWrap: "wrap",
+        justifyContent: alignRight ? "flex-end" : "flex-start"
+      }}
+    >
+      <span
+        style={{
+          fontSize: 10.5,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: "var(--ink-4)",
+          flex: "none"
+        }}
+      >
+        {label}
+      </span>
+      {fields.length === 0 && (
+        <span style={{ fontSize: 11, color: "var(--ink-4)", fontStyle: "italic" }}>—</span>
+      )}
+      {fields.map((f) => {
+        const active = selected.has(f.id);
+        return (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => onToggle(f.id)}
+            className={active ? "pill pill-accent" : "pill"}
+            style={{
+              cursor: "pointer",
+              border: "1px solid var(--line)",
+              fontSize: 11
+            }}
+          >
+            {f.label}
+          </button>
         );
       })}
     </div>
