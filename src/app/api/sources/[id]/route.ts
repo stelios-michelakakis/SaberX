@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { mapError, ok } from "@/lib/api";
 import { requireUser } from "@/services/auth";
@@ -25,6 +26,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const { id } = await context.params;
     const input = patchSchema.parse(await request.json());
     const source = await renameSource(user, id, input.displayName);
+    revalidatePath("/dashboard/sources");
+    revalidatePath(`/dashboard/sources/${id}`);
+    revalidatePath("/dashboard", "layout");
     return ok({ source });
   } catch (error) {
     return mapError(error);
@@ -36,6 +40,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
     const user = await requireUser();
     const { id } = await context.params;
     await deleteSource(user, id);
+    revalidatePath("/dashboard/sources");
+    revalidatePath("/dashboard", "layout");
     return ok({ ok: true });
   } catch (error) {
     return mapError(error);

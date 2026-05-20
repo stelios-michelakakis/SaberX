@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { mapError, ok, created } from "@/lib/api";
 import { requireUser } from "@/services/auth";
 import { createSource, listSources } from "@/services/sources";
@@ -31,6 +32,10 @@ export async function POST(request: Request) {
     const filename = file.name;
     const buffer = Buffer.from(await file.arrayBuffer());
     const source = await createSource(user, { filename, buffer, displayName });
+    // Bust the client-side router cache for the sources list so the new
+    // row is visible without a hard refresh after upload.
+    revalidatePath("/dashboard/sources");
+    revalidatePath("/dashboard", "layout"); // sidebar source list
     return created({ source });
   } catch (error) {
     return mapError(error);
