@@ -198,63 +198,97 @@ export function TraceClient({
       <div
         style={{
           display: "flex",
-          gap: 10,
-          alignItems: "center",
+          flexDirection: "column",
+          gap: 8,
           padding: "10px 14px",
           background: "var(--panel)",
           border: "1px solid var(--line)",
           borderRadius: "var(--sx-radius-lg)",
-          boxShadow: "var(--sx-shadow-sm)",
-          flexWrap: "wrap"
+          boxShadow: "var(--sx-shadow-sm)"
         }}
       >
-        <Icon name="filter" size={12} style={{ color: "var(--ink-3)" }} />
-        <DocFilter
-          label="Document source"
-          value={sourceDocId}
-          onChange={setSourceDocId}
-          documents={documents}
-        />
-        {mode === "graph" && (
-          <SheetFilter
-            label="Sheet"
-            value={leftSheetId}
-            onChange={setLeftSheetId}
-            options={eligibleSourceSheets}
-            hideDoc={Boolean(sourceDocId)}
+        {/* Documents row */}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}
+        >
+          <Icon name="filter" size={12} style={{ color: "var(--ink-3)" }} />
+          <DocFilter
+            label="Document source"
+            value={sourceDocId}
+            onChange={setSourceDocId}
+            documents={documents}
           />
-        )}
-        <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
-        <DocFilter
-          label="Document target"
-          value={targetDocId}
-          onChange={setTargetDocId}
-          documents={documents}
-        />
-        {mode === "graph" && (
-          <SheetFilter
-            label="Sheet"
-            value={rightSheetId}
-            onChange={setRightSheetId}
-            options={eligibleTargetSheets}
-            hideDoc={Boolean(targetDocId)}
+          <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
+          <DocFilter
+            label="Document target"
+            value={targetDocId}
+            onChange={setTargetDocId}
+            documents={documents}
           />
-        )}
-        {(sourceDocId || targetDocId) && (
-          <button
-            type="button"
-            className="sx-btn sx-btn-sm"
-            onClick={() => {
-              setSourceDocId("");
-              setTargetDocId("");
+          {(sourceDocId || targetDocId) && (
+            <button
+              type="button"
+              className="sx-btn sx-btn-sm"
+              onClick={() => {
+                setSourceDocId("");
+                setTargetDocId("");
+              }}
+            >
+              <Icon name="x" size={12} /> Clear
+            </button>
+          )}
+          <span style={{ marginLeft: "auto", color: "var(--ink-3)", fontSize: 12 }}>
+            {filteredLinks.length} link{filteredLinks.length === 1 ? "" : "s"} shown
+          </span>
+        </div>
+        {/* Sheets row (graph mode only) */}
+        {mode === "graph" && (
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+              paddingTop: 8,
+              borderTop: "1px dashed var(--line)"
             }}
           >
-            <Icon name="x" size={12} /> Clear
-          </button>
+            <span
+              style={{
+                fontSize: 10.5,
+                color: "var(--ink-4)",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                width: 18,
+                textAlign: "center",
+                flex: "none"
+              }}
+              aria-hidden
+            >
+              ↳
+            </span>
+            <SheetFilter
+              label="Sheet source"
+              value={leftSheetId}
+              onChange={setLeftSheetId}
+              options={eligibleSourceSheets}
+              hideDoc={Boolean(sourceDocId)}
+            />
+            <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
+            <SheetFilter
+              label="Sheet target"
+              value={rightSheetId}
+              onChange={setRightSheetId}
+              options={eligibleTargetSheets}
+              hideDoc={Boolean(targetDocId)}
+            />
+          </div>
         )}
-        <span style={{ marginLeft: "auto", color: "var(--ink-3)", fontSize: 12 }}>
-          {filteredLinks.length} link{filteredLinks.length === 1 ? "" : "s"} shown
-        </span>
       </div>
 
       {mode === "table" ? (
