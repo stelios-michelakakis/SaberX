@@ -10,7 +10,7 @@ import {
   rows,
   sheets
 } from "@/db/schema";
-import { PageHeader, Empty } from "@/components/saberx/page-header";
+import { Empty } from "@/components/saberx/page-header";
 import { requireUser } from "@/services/auth";
 import { TraceClient, type TraceLink, type TraceRow, type TraceSheet } from "./trace-client";
 
@@ -59,19 +59,12 @@ export default async function TracePage({
 
   if (linkRows.length === 0) {
     return (
-      <>
-        <PageHeader
-          eyebrow="Trace links"
-          title="Trace coverage"
-          subtitle="Cross-document references between rows. Edit reference cells in any sheet to seed this graph."
+      <div style={{ padding: "40px 28px" }}>
+        <Empty
+          title="No trace links yet"
+          hint="Create a single_reference or multi_reference field in a sheet, then link rows from the document grid."
         />
-        <div style={{ padding: "40px 28px" }}>
-          <Empty
-            title="No trace links yet"
-            hint="Create a single_reference or multi_reference field in a sheet, then link rows from the document grid."
-          />
-        </div>
-      </>
+      </div>
     );
   }
 
@@ -322,33 +315,35 @@ export default async function TracePage({
 
   return (
     <>
-      <PageHeader
-        eyebrow="Trace links"
-        title="Trace coverage"
-        subtitle="Cross-document references — edit reference cells in any sheet to keep this graph current."
-        meta={
-          <>
-            <span>
-              <strong style={{ color: "var(--ink)" }}>{totalLinks}</strong>{" "}
-              {totalLinks === 1 ? "link" : "links"}
-            </span>
-            <span>
-              <strong style={{ color: "var(--ink)" }}>{totalSources}</strong>{" "}
-              {totalSources === 1 ? "source row" : "source rows"}
-            </span>
-            <span>
-              <strong style={{ color: "var(--ink)" }}>{docCount}</strong>{" "}
-              {docCount === 1 ? "document involved" : "documents involved"}
-            </span>
-            <span>
-              <strong style={{ color: "var(--ink)" }}>{Number(orphans)}</strong>{" "}
-              {Number(orphans) === 1
-                ? "row without outgoing links"
-                : "rows without outgoing links"}
-            </span>
-          </>
-        }
-      />
+      <div
+        style={{
+          padding: "10px 28px",
+          borderBottom: "1px solid var(--line)",
+          background: "var(--panel)",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 16,
+          fontSize: 12,
+          color: "var(--ink-3)"
+        }}
+      >
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{totalLinks}</strong>{" "}
+          {totalLinks === 1 ? "link" : "links"}
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{totalSources}</strong>{" "}
+          {totalSources === 1 ? "source row" : "source rows"}
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{docCount}</strong>{" "}
+          {docCount === 1 ? "document involved" : "documents involved"}
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{Number(orphans)}</strong>{" "}
+          {Number(orphans) === 1 ? "row without outgoing links" : "rows without outgoing links"}
+        </span>
+      </div>
       <TraceClient
         links={traceLinks}
         rows={traceRows}

@@ -241,14 +241,14 @@ export function TraceGraph({
         }}
       >
         <SheetPicker
-          label="Source"
+          label="Sheet source"
           value={leftSheetId}
           onChange={setLeftSheetId}
           options={eligibleSourceSheets}
         />
         <Icon name="arrowR" size={14} style={{ color: "var(--ink-4)" }} />
         <SheetPicker
-          label="Target"
+          label="Sheet target"
           value={rightSheetId}
           onChange={setRightSheetId}
           options={eligibleTargetSheets}

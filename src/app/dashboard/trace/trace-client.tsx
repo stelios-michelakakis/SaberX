@@ -119,14 +119,14 @@ export function TraceClient({
         </div>
         <Icon name="filter" size={12} style={{ color: "var(--ink-3)", marginLeft: 6 }} />
         <DocFilter
-          label="Source"
+          label="Document source"
           value={sourceDocId}
           onChange={setSourceDocId}
           documents={documents}
         />
         <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
         <DocFilter
-          label="Target"
+          label="Document target"
           value={targetDocId}
           onChange={setTargetDocId}
           documents={documents}
