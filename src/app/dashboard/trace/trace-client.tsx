@@ -197,9 +197,12 @@ export function TraceClient({
       <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
+          display: "grid",
+          gridTemplateColumns:
+            "18px auto minmax(220px, 1fr) auto auto minmax(220px, 1fr) auto",
+          rowGap: 8,
+          columnGap: 10,
+          alignItems: "center",
           padding: "10px 14px",
           background: "var(--panel)",
           border: "1px solid var(--line)",
@@ -207,29 +210,43 @@ export function TraceClient({
           boxShadow: "var(--sx-shadow-sm)"
         }}
       >
-        {/* Documents row */}
+        {/* Row 1 — documents */}
+        <Icon
+          name="filter"
+          size={12}
+          style={{ color: "var(--ink-3)", justifySelf: "center" }}
+        />
+        <FilterLabel>Document source</FilterLabel>
+        <FilterSelect value={sourceDocId} onChange={setSourceDocId}>
+          <option value="">All documents</option>
+          {documents.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.title}
+            </option>
+          ))}
+        </FilterSelect>
+        <Icon
+          name="arrowR"
+          size={12}
+          style={{ color: "var(--ink-4)", justifySelf: "center" }}
+        />
+        <FilterLabel>Document target</FilterLabel>
+        <FilterSelect value={targetDocId} onChange={setTargetDocId}>
+          <option value="">All documents</option>
+          {documents.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.title}
+            </option>
+          ))}
+        </FilterSelect>
         <div
           style={{
             display: "flex",
-            gap: 10,
             alignItems: "center",
-            flexWrap: "wrap"
+            gap: 10,
+            justifyContent: "flex-end"
           }}
         >
-          <Icon name="filter" size={12} style={{ color: "var(--ink-3)" }} />
-          <DocFilter
-            label="Document source"
-            value={sourceDocId}
-            onChange={setSourceDocId}
-            documents={documents}
-          />
-          <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
-          <DocFilter
-            label="Document target"
-            value={targetDocId}
-            onChange={setTargetDocId}
-            documents={documents}
-          />
           {(sourceDocId || targetDocId) && (
             <button
               type="button"
@@ -242,52 +259,58 @@ export function TraceClient({
               <Icon name="x" size={12} /> Clear
             </button>
           )}
-          <span style={{ marginLeft: "auto", color: "var(--ink-3)", fontSize: 12 }}>
+          <span style={{ color: "var(--ink-3)", fontSize: 12, whiteSpace: "nowrap" }}>
             {filteredLinks.length} link{filteredLinks.length === 1 ? "" : "s"} shown
           </span>
         </div>
-        {/* Sheets row (graph mode only) */}
+
+        {/* Divider — spans all columns when both rows are visible */}
         {mode === "graph" && (
           <div
             style={{
-              display: "flex",
-              gap: 10,
-              alignItems: "center",
-              flexWrap: "wrap",
-              paddingTop: 8,
+              gridColumn: "1 / -1",
+              height: 0,
               borderTop: "1px dashed var(--line)"
             }}
-          >
+          />
+        )}
+
+        {/* Row 2 — sheets (graph mode only) */}
+        {mode === "graph" && (
+          <>
             <span
               style={{
-                fontSize: 10.5,
+                fontSize: 12,
                 color: "var(--ink-4)",
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-                width: 18,
-                textAlign: "center",
-                flex: "none"
+                justifySelf: "center"
               }}
               aria-hidden
             >
               ↳
             </span>
-            <SheetFilter
-              label="Sheet source"
-              value={leftSheetId}
-              onChange={setLeftSheetId}
-              options={eligibleSourceSheets}
-              hideDoc={Boolean(sourceDocId)}
+            <FilterLabel>Sheet source</FilterLabel>
+            <FilterSelect value={leftSheetId} onChange={setLeftSheetId}>
+              {eligibleSourceSheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {sourceDocId ? s.name : `${s.documentTitle} · ${s.name}`}
+                </option>
+              ))}
+            </FilterSelect>
+            <Icon
+              name="arrowR"
+              size={12}
+              style={{ color: "var(--ink-4)", justifySelf: "center" }}
             />
-            <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
-            <SheetFilter
-              label="Sheet target"
-              value={rightSheetId}
-              onChange={setRightSheetId}
-              options={eligibleTargetSheets}
-              hideDoc={Boolean(targetDocId)}
-            />
-          </div>
+            <FilterLabel>Sheet target</FilterLabel>
+            <FilterSelect value={rightSheetId} onChange={setRightSheetId}>
+              {eligibleTargetSheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {targetDocId ? s.name : `${s.documentTitle} · ${s.name}`}
+                </option>
+              ))}
+            </FilterSelect>
+            <div />
+          </>
         )}
       </div>
 
@@ -493,96 +516,47 @@ function rowHref(
   return `/dashboard/documents/${documentId}?${params.toString()}`;
 }
 
-function DocFilter({
-  label,
-  value,
-  onChange,
-  documents
-}: {
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-  documents: { id: string; title: string }[];
-}) {
+function FilterLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label
+    <span
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        fontSize: 11.5,
-        color: "var(--ink-3)"
+        fontSize: 11,
+        fontWeight: 500,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        color: "var(--ink-3)",
+        whiteSpace: "nowrap"
       }}
     >
-      <span style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-      <select
-        className="select"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          height: 28,
-          minHeight: 0,
-          width: "auto",
-          minWidth: 180,
-          fontSize: 12.5,
-          padding: "2px 26px 2px 8px"
-        }}
-      >
-        <option value="">All documents</option>
-        {documents.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.title}
-          </option>
-        ))}
-      </select>
-    </label>
+      {children}
+    </span>
   );
 }
 
-function SheetFilter({
-  label,
+function FilterSelect({
   value,
   onChange,
-  options,
-  hideDoc
+  children
 }: {
-  label: string;
   value: string;
-  onChange: (v: string) => void;
-  options: TraceSheet[];
-  hideDoc: boolean;
+  onChange: (next: string) => void;
+  children: React.ReactNode;
 }) {
   return (
-    <label
+    <select
+      className="select"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        fontSize: 11.5,
-        color: "var(--ink-3)"
+        height: 28,
+        minHeight: 0,
+        width: "100%",
+        fontSize: 12.5,
+        padding: "2px 26px 2px 8px"
       }}
     >
-      <span style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-      <select
-        className="select"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          height: 28,
-          minHeight: 0,
-          width: "auto",
-          minWidth: 180,
-          fontSize: 12.5,
-          padding: "2px 26px 2px 8px"
-        }}
-      >
-        {options.map((s) => (
-          <option key={s.id} value={s.id}>
-            {hideDoc ? s.name : `${s.documentTitle} · ${s.name}`}
-          </option>
-        ))}
-      </select>
-    </label>
+      {children}
+    </select>
   );
 }
 
