@@ -75,40 +75,60 @@ export function Topbar({
   }, [router]);
 
   const onImport = async (file: File) => {
+    const name = file.name.toLowerCase();
+    const isWorkbook = name.endsWith(".xlsx") || name.endsWith(".xlsm");
+    const isSource =
+      name.endsWith(".pdf") ||
+      name.endsWith(".docx") ||
+      name.endsWith(".md") ||
+      name.endsWith(".txt");
+    if (!isWorkbook && !isSource) {
+      toast.error("Unsupported file type", {
+        detail: "Excel workbooks (.xlsx, .xlsm) import as documents. PDF/DOCX/MD/TXT upload as sources."
+      });
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setImporting(true);
     const sizeKb = Math.max(1, Math.round(file.size / 1024));
     const sizeLabel = sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
-    const progressId = toast.info(`Importing ${file.name}…`, {
-      detail: `${sizeLabel} — uploading and parsing on the server`,
+    const progressId = toast.info(`Uploading ${file.name}…`, {
+      detail: `${sizeLabel} — ${isWorkbook ? "parsing as a document" : "saving as a source"}`,
       durationMs: 0,
       loading: true
     });
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/import-jobs", { method: "POST", body: fd });
-      toast.dismiss(progressId);
-      if (!res.ok) {
-        const text = await res.text();
-        toast.error("Import failed", { detail: text.slice(0, 200) });
-        return;
-      }
-      const payload = (await res.json().catch(() => null)) as
-        | { document?: { id: string; title: string } }
-        | null;
-      toast.success(`Imported ${file.name}`);
-      const newDocId = payload?.document?.id;
-      if (newDocId) {
-        // Walk the user through any detected cross-references before they
-        // even see the imported sheets — same review screen as the manual
-        // entry from the document toolbar, but in step-by-step wizard mode.
-        router.push(`/dashboard/documents/${newDocId}/resolve-references?wizard=1`);
+      if (isWorkbook) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/import-jobs", { method: "POST", body: fd });
+        toast.dismiss(progressId);
+        if (!res.ok) {
+          const text = await res.text();
+          toast.error("Import failed", { detail: text.slice(0, 200) });
+          return;
+        }
+        toast.success(`Imported ${file.name}`);
+        router.push("/dashboard");
+        router.refresh();
       } else {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/sources", { method: "POST", body: fd });
+        toast.dismiss(progressId);
+        if (!res.ok) {
+          const detail = await res.json().catch(() => ({}));
+          toast.error("Upload failed", { detail: detail.error });
+          return;
+        }
+        toast.success(`Uploaded ${file.name}`);
+        router.push("/dashboard/sources");
         router.refresh();
       }
     } catch (err) {
       toast.dismiss(progressId);
-      toast.error("Import failed", { detail: (err as Error).message });
+      toast.error("Upload failed", { detail: (err as Error).message });
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -245,7 +265,7 @@ export function Topbar({
         <input
           ref={fileRef}
           type="file"
-          accept=".xlsx,.xlsm"
+          accept=".xlsx,.xlsm,.pdf,.docx,.md,.txt"
           style={{ display: "none" }}
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -258,13 +278,14 @@ export function Topbar({
           disabled={importing}
           type="button"
           data-tour="topbar-import"
+          title="Excel (.xlsx/.xlsm) imports as a document; PDF/DOCX/MD/TXT uploads as a source"
         >
           {importing ? (
             <Icon name="spinner" size={12} className="spin" />
           ) : (
             <Icon name="upload" size={12} />
           )}
-          {importing ? "Importing…" : "Import"}
+          {importing ? "Uploading…" : "Import"}
         </button>
       </div>
     </div>
