@@ -362,6 +362,7 @@ export function TraceGraph({
           value={leftSheetId}
           onChange={setLeftSheetId}
           options={eligibleSourceSheets}
+          hideDoc={hideSourceDocInTitle}
         />
         <Icon name="arrowR" size={14} style={{ color: "var(--ink-4)" }} />
         <SheetPicker
@@ -369,6 +370,7 @@ export function TraceGraph({
           value={rightSheetId}
           onChange={setRightSheetId}
           options={eligibleTargetSheets}
+          hideDoc={hideTargetDocInTitle}
         />
         <span style={{ marginLeft: "auto", color: "var(--ink-3)", fontSize: 12 }}>
           {visibleLinks.length} connection{visibleLinks.length === 1 ? "" : "s"}
@@ -508,12 +510,14 @@ function SheetPicker({
   label,
   value,
   onChange,
-  options
+  options,
+  hideDoc = false
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: TraceSheet[];
+  hideDoc?: boolean;
 }) {
   return (
     <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -541,7 +545,7 @@ function SheetPicker({
       >
         {options.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.documentTitle} · {s.name}
+            {hideDoc ? s.name : `${s.documentTitle} · ${s.name}`}
           </option>
         ))}
       </select>
