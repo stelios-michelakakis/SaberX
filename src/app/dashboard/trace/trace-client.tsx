@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/saberx/icon";
 import { TraceGraph } from "./trace-graph";
 
@@ -69,6 +69,63 @@ export function TraceClient({
       return matchSrc && matchTgt;
     });
   }, [links, sourceDocId, targetDocId, rowMap]);
+
+  // Sheet picker state is lifted out of TraceGraph so we can render its
+  // dropdowns in the same filter bar as the document filters.
+  const eligibleSourceSheets = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of filteredLinks) {
+      const src = rowMap.get(l.sourceRowId);
+      if (src) ids.add(src.sheetId);
+    }
+    return Array.from(ids)
+      .map((id) => sheetMap.get(id))
+      .filter((s): s is TraceSheet => Boolean(s));
+  }, [filteredLinks, rowMap, sheetMap]);
+
+  const eligibleTargetSheets = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of filteredLinks) {
+      const tgt = rowMap.get(l.targetRowId);
+      if (tgt) ids.add(tgt.sheetId);
+    }
+    return Array.from(ids)
+      .map((id) => sheetMap.get(id))
+      .filter((s): s is TraceSheet => Boolean(s));
+  }, [filteredLinks, rowMap, sheetMap]);
+
+  const defaultPair = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of filteredLinks) {
+      const src = rowMap.get(l.sourceRowId);
+      const tgt = rowMap.get(l.targetRowId);
+      if (!src || !tgt) continue;
+      const key = `${src.sheetId}::${tgt.sheetId}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let best: { key: string; n: number } | null = null;
+    for (const [key, n] of counts) {
+      if (!best || n > best.n) best = { key, n };
+    }
+    if (!best) return null;
+    const [src, tgt] = best.key.split("::");
+    return { src, tgt };
+  }, [filteredLinks, rowMap]);
+
+  const [leftSheetId, setLeftSheetId] = useState<string>("");
+  const [rightSheetId, setRightSheetId] = useState<string>("");
+
+  // Seed defaults and re-seed when filters change such that the chosen
+  // sheet is no longer in scope.
+  useEffect(() => {
+    if (!eligibleSourceSheets.some((s) => s.id === leftSheetId)) {
+      setLeftSheetId(defaultPair?.src ?? eligibleSourceSheets[0]?.id ?? "");
+    }
+    if (!eligibleTargetSheets.some((s) => s.id === rightSheetId)) {
+      setRightSheetId(defaultPair?.tgt ?? eligibleTargetSheets[0]?.id ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eligibleSourceSheets, eligibleTargetSheets, defaultPair]);
 
   return (
     <>
@@ -158,6 +215,15 @@ export function TraceClient({
           onChange={setSourceDocId}
           documents={documents}
         />
+        {mode === "graph" && (
+          <SheetFilter
+            label="Sheet"
+            value={leftSheetId}
+            onChange={setLeftSheetId}
+            options={eligibleSourceSheets}
+            hideDoc={Boolean(sourceDocId)}
+          />
+        )}
         <Icon name="arrowR" size={12} style={{ color: "var(--ink-4)" }} />
         <DocFilter
           label="Document target"
@@ -165,6 +231,15 @@ export function TraceClient({
           onChange={setTargetDocId}
           documents={documents}
         />
+        {mode === "graph" && (
+          <SheetFilter
+            label="Sheet"
+            value={rightSheetId}
+            onChange={setRightSheetId}
+            options={eligibleTargetSheets}
+            hideDoc={Boolean(targetDocId)}
+          />
+        )}
         {(sourceDocId || targetDocId) && (
           <button
             type="button"
@@ -194,9 +269,8 @@ export function TraceClient({
           links={filteredLinks}
           rowMap={rowMap}
           sheetMap={sheetMap}
-          documentFilterId={sourceDocId || targetDocId || null}
-          hideSourceDocInTitle={Boolean(sourceDocId)}
-          hideTargetDocInTitle={Boolean(targetDocId)}
+          leftSheetId={leftSheetId}
+          rightSheetId={rightSheetId}
         />
       )}
       </div>
@@ -424,6 +498,53 @@ function DocFilter({
         {documents.map((d) => (
           <option key={d.id} value={d.id}>
             {d.title}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SheetFilter({
+  label,
+  value,
+  onChange,
+  options,
+  hideDoc
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: TraceSheet[];
+  hideDoc: boolean;
+}) {
+  return (
+    <label
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 11.5,
+        color: "var(--ink-3)"
+      }}
+    >
+      <span style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+      <select
+        className="select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          height: 28,
+          minHeight: 0,
+          width: "auto",
+          minWidth: 180,
+          fontSize: 12.5,
+          padding: "2px 26px 2px 8px"
+        }}
+      >
+        {options.map((s) => (
+          <option key={s.id} value={s.id}>
+            {hideDoc ? s.name : `${s.documentTitle} · ${s.name}`}
           </option>
         ))}
       </select>

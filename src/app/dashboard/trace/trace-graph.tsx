@@ -68,65 +68,15 @@ export function TraceGraph({
   links,
   rowMap,
   sheetMap,
-  documentFilterId,
-  hideSourceDocInTitle = false,
-  hideTargetDocInTitle = false
+  leftSheetId,
+  rightSheetId
 }: {
   links: TraceLink[];
   rowMap: Map<string, TraceRow>;
   sheetMap: Map<string, TraceSheet>;
-  documentFilterId: string | null;
-  hideSourceDocInTitle?: boolean;
-  hideTargetDocInTitle?: boolean;
+  leftSheetId: string;
+  rightSheetId: string;
 }) {
-  const eligibleSourceSheets = useMemo(() => {
-    const ids = new Set<string>();
-    for (const l of links) {
-      const src = rowMap.get(l.sourceRowId);
-      if (src) ids.add(src.sheetId);
-    }
-    return Array.from(ids)
-      .map((id) => sheetMap.get(id))
-      .filter((s): s is TraceSheet => Boolean(s));
-  }, [links, rowMap, sheetMap]);
-
-  const eligibleTargetSheets = useMemo(() => {
-    const ids = new Set<string>();
-    for (const l of links) {
-      const tgt = rowMap.get(l.targetRowId);
-      if (tgt) ids.add(tgt.sheetId);
-    }
-    return Array.from(ids)
-      .map((id) => sheetMap.get(id))
-      .filter((s): s is TraceSheet => Boolean(s));
-  }, [links, rowMap, sheetMap]);
-
-  // Default to the most-linked source/target pair.
-  const defaultPair = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const l of links) {
-      const src = rowMap.get(l.sourceRowId);
-      const tgt = rowMap.get(l.targetRowId);
-      if (!src || !tgt) continue;
-      const key = `${src.sheetId}::${tgt.sheetId}`;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    let best: { key: string; n: number } | null = null;
-    for (const [key, n] of counts) {
-      if (!best || n > best.n) best = { key, n };
-    }
-    if (!best) return null;
-    const [src, tgt] = best.key.split("::");
-    return { src, tgt };
-  }, [links, rowMap]);
-
-  const [leftSheetId, setLeftSheetId] = useState<string>(
-    defaultPair?.src ?? eligibleSourceSheets[0]?.id ?? ""
-  );
-  const [rightSheetId, setRightSheetId] = useState<string>(
-    defaultPair?.tgt ?? eligibleTargetSheets[0]?.id ?? ""
-  );
-
   // Lazy-loaded per-side: the sheet's fields + a map of rowId → cell values.
   // Lets us render arbitrary field values inside each row card.
   const [leftDetail, setLeftDetail] = useState<SheetDetail | null>(null);
@@ -171,17 +121,6 @@ export function TraceGraph({
       cancelled = true;
     };
   }, [rightSheetId]);
-
-  // Re-default if the user changes filters and the chosen sheet is no longer eligible.
-  useEffect(() => {
-    if (!eligibleSourceSheets.some((s) => s.id === leftSheetId)) {
-      setLeftSheetId(eligibleSourceSheets[0]?.id ?? "");
-    }
-    if (!eligibleTargetSheets.some((s) => s.id === rightSheetId)) {
-      setRightSheetId(eligibleTargetSheets[0]?.id ?? "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentFilterId, links]);
 
   const leftRows = useMemo(() => {
     if (!leftSheetId) return [];
@@ -314,10 +253,7 @@ export function TraceGraph({
     return false;
   };
 
-  const leftSheet = sheetMap.get(leftSheetId);
-  const rightSheet = sheetMap.get(rightSheetId);
-
-  if (eligibleSourceSheets.length === 0 || eligibleTargetSheets.length === 0) {
+  if (!leftSheetId || !rightSheetId) {
     return (
       <div
         style={{
@@ -348,30 +284,13 @@ export function TraceGraph({
     >
       <div
         style={{
-          padding: "10px 14px",
+          padding: "8px 14px",
           borderBottom: "1px solid var(--line)",
           background: "var(--panel-2)",
           display: "flex",
-          gap: 12,
-          alignItems: "center",
-          flexWrap: "wrap"
+          alignItems: "center"
         }}
       >
-        <SheetPicker
-          label="Sheet source"
-          value={leftSheetId}
-          onChange={setLeftSheetId}
-          options={eligibleSourceSheets}
-          hideDoc={hideSourceDocInTitle}
-        />
-        <Icon name="arrowR" size={14} style={{ color: "var(--ink-4)" }} />
-        <SheetPicker
-          label="Sheet target"
-          value={rightSheetId}
-          onChange={setRightSheetId}
-          options={eligibleTargetSheets}
-          hideDoc={hideTargetDocInTitle}
-        />
         <span style={{ marginLeft: "auto", color: "var(--ink-3)", fontSize: 12 }}>
           {visibleLinks.length} connection{visibleLinks.length === 1 ? "" : "s"}
         </span>
@@ -428,13 +347,6 @@ export function TraceGraph({
         }}
       >
         <Column
-          title={
-            leftSheet
-              ? hideSourceDocInTitle
-                ? leftSheet.name
-                : `${leftSheet.documentTitle} · ${leftSheet.name}`
-              : "Source"
-          }
           rows={leftRows}
           side="left"
           detail={leftDetail}
@@ -445,13 +357,6 @@ export function TraceGraph({
         />
         <div />
         <Column
-          title={
-            rightSheet
-              ? hideTargetDocInTitle
-                ? rightSheet.name
-                : `${rightSheet.documentTitle} · ${rightSheet.name}`
-              : "Target"
-          }
           rows={rightRows}
           side="right"
           detail={rightDetail}
@@ -506,55 +411,7 @@ export function TraceGraph({
   );
 }
 
-function SheetPicker({
-  label,
-  value,
-  onChange,
-  options,
-  hideDoc = false
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: TraceSheet[];
-  hideDoc?: boolean;
-}) {
-  return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span
-        style={{
-          fontSize: 10.5,
-          color: "var(--ink-3)",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em"
-        }}
-      >
-        {label}
-      </span>
-      <select
-        className="select"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          height: 28,
-          minHeight: 0,
-          minWidth: 220,
-          fontSize: 12.5,
-          padding: "4px 28px 4px 10px"
-        }}
-      >
-        {options.map((s) => (
-          <option key={s.id} value={s.id}>
-            {hideDoc ? s.name : `${s.documentTitle} · ${s.name}`}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
 function Column({
-  title,
   rows,
   side,
   detail,
@@ -563,7 +420,6 @@ function Column({
   onHover,
   assignRef
 }: {
-  title: string;
   rows: TraceRow[];
   side: "left" | "right";
   detail: SheetDetail | null;
@@ -577,18 +433,6 @@ function Column({
     : [];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div
-        style={{
-          fontSize: 11,
-          color: "var(--ink-3)",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          marginBottom: 4,
-          textAlign: side === "left" ? "left" : "right"
-        }}
-      >
-        {title}
-      </div>
       {rows.length === 0 && (
         <div style={{ color: "var(--ink-4)", fontSize: 12.5, fontStyle: "italic" }}>
           No referenced rows in this sheet.
@@ -655,7 +499,7 @@ function Column({
                   display: "flex",
                   flexDirection: "column",
                   gap: 2,
-                  textAlign: side === "left" ? "left" : "right"
+                  textAlign: "left"
                 }}
               >
                 {selectedFields.map((f) => {
@@ -672,7 +516,7 @@ function Column({
                         flexDirection: "row",
                         alignItems: "baseline",
                         gap: 6,
-                        justifyContent: side === "left" ? "flex-start" : "flex-end"
+                        justifyContent: "flex-start"
                       }}
                     >
                       <span style={{ color: "var(--ink-4)", flex: "none", fontSize: 10.5 }}>
@@ -683,8 +527,8 @@ function Column({
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
-                          textAlign: side === "left" ? "left" : "right",
-                          flex: side === "left" ? 1 : "0 1 auto",
+                          textAlign: "left",
+                          flex: 1,
                           minWidth: 0
                         }}
                         title={value}
