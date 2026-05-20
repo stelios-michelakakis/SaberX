@@ -74,12 +74,22 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
         }}
       >
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <colgroup>
+            {/* Filename takes all remaining space; the others hug their content. */}
+            <col />
+            <col style={{ width: 70 }} />
+            <col style={{ width: 70 }} />
+            <col style={{ width: 100 }} />
+            <col style={{ width: 160 }} />
+            <col style={{ width: 180 }} />
+            <col style={{ width: 90 }} />
+          </colgroup>
           <thead>
             <tr style={{ background: "var(--panel-2)" }}>
               <Th>Filename</Th>
+              <Th align="right">Refs</Th>
               <Th>Type</Th>
               <Th align="right">Size</Th>
-              <Th align="right">Refs</Th>
               <Th>Uploaded by</Th>
               <Th>Uploaded</Th>
               <Th align="right"> </Th>
@@ -125,12 +135,6 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
                       </div>
                     )}
                   </Td>
-                  <Td muted>
-                    <span className="pill">{ext.toUpperCase() || "?"}</span>
-                  </Td>
-                  <Td align="right" muted mono>
-                    {formatSize(s.sizeBytes)}
-                  </Td>
                   <Td align="right" muted mono>
                     {s.referenceCount > 0 ? (
                       <span
@@ -142,6 +146,12 @@ export function SourcesClient({ initialSources }: { initialSources: SourceVm[] }
                     ) : (
                       "—"
                     )}
+                  </Td>
+                  <Td muted>
+                    <span className="pill">{ext.toUpperCase() || "?"}</span>
+                  </Td>
+                  <Td align="right" muted mono>
+                    {formatSize(s.sizeBytes)}
                   </Td>
                   <Td muted>{s.uploadedByUsername ?? "—"}</Td>
                   <Td muted>{new Date(s.createdAt).toLocaleString()}</Td>

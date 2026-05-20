@@ -1,26 +1,45 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { fields } from "@/db/schema";
-import { slugify } from "@/lib/utils";
 import { createDocument, createField, createImportJob, createRow, createUserSheet, getDocumentExportModel, markExportJob } from "./repository";
+import { slugify } from "@/lib/utils";
 import { writeAudit } from "./audit";
 
 type ActorUser = { userId: string; username: string };
 
-function inferFieldType(values: unknown[]) {
-  const samples = values.filter((value) => value !== null && value !== undefined && String(value).trim() !== "").slice(0, 20);
-  if (!samples.length) return "short_text" as const;
-  if (samples.every((value) => !Number.isNaN(Number(value)))) return "decimal" as const;
-  if (samples.every((value) => ["true", "false", "yes", "no", "0", "1"].includes(String(value).toLowerCase()))) return "boolean" as const;
-  if (samples.every((value) => !Number.isNaN(Date.parse(String(value))))) return "date" as const;
-  if (samples.some((value) => String(value).length > 120)) return "long_text" as const;
-  return "short_text" as const;
+function normalizeSheetName(name: string) {
+  return name.replace(/[\s_-]+/g, " ").trim().toUpperCase();
 }
 
-function normalizeSheetName(name: string) {
-  return name.trim().toUpperCase().replace(/[_\s-]+/g, " ");
+type ImportedFieldType =
+  | "short_text"
+  | "long_text"
+  | "integer"
+  | "decimal"
+  | "boolean"
+  | "date"
+  | "datetime"
+  | "single_enum";
+
+function inferFieldType(samples: unknown[]): ImportedFieldType {
+  const nonEmpty = samples
+    .map((s) => (s == null ? "" : String(s)))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (nonEmpty.length === 0) return "short_text";
+  if (nonEmpty.every((value) => /^-?\d+$/.test(value))) return "integer";
+  if (nonEmpty.every((value) => /^-?\d+(\.\d+)?$/.test(value))) return "decimal";
+  if (nonEmpty.every((value) => /^(true|false|yes|no)$/i.test(value))) return "boolean";
+  if (nonEmpty.every((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))) return "date";
+  if (nonEmpty.every((value) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value))) return "datetime";
+  if (nonEmpty.length > 4 && new Set(nonEmpty.map((v) => v.toLowerCase())).size <= Math.ceil(nonEmpty.length / 2)) {
+    return "single_enum";
+  }
+  if (nonEmpty.some((value) => value.length > 80 || /\n/.test(value))) return "long_text";
+  return "short_text";
 }
 
 export async function importWorkbook(user: ActorUser, filename: string, bytes: Buffer) {
@@ -146,45 +165,214 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
   return { importJob, document, summary: { sheetCount, rowCount, skipped } };
 }
 
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
+const HEADER_FILL: ExcelJS.Fill = {
+  type: "pattern",
+  pattern: "solid",
+  fgColor: { argb: "FF1F2937" } // slate-800
+};
+const HEADER_FONT: Partial<ExcelJS.Font> = {
+  color: { argb: "FFFFFFFF" },
+  bold: true,
+  size: 11
+};
+const ZEBRA_FILL: ExcelJS.Fill = {
+  type: "pattern",
+  pattern: "solid",
+  fgColor: { argb: "FFF7F8FA" } // very light grey
+};
+const BORDER_STYLE: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FFE5E7EB" } },
+  left: { style: "thin", color: { argb: "FFE5E7EB" } },
+  bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+  right: { style: "thin", color: { argb: "FFE5E7EB" } }
+};
+
+function safeSheetName(name: string): string {
+  // Excel: 31-char limit, can't contain : \ / ? * [ ]
+  return name.replace(/[:\\/?*\[\]]/g, "_").slice(0, 31) || "Sheet";
+}
+
+function valueToCell(value: unknown): string | number | boolean | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (item == null) return "";
+        if (typeof item === "object" && "label" in (item as object)) {
+          return (item as { label?: unknown }).label ?? "";
+        }
+        return String(item);
+      })
+      .filter((s) => s !== "")
+      .join(", ");
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function escapeMdTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
 export async function exportWorkbook(user: ActorUser, documentId: string) {
   const model = await getDocumentExportModel(documentId);
+  const doc = model.document;
+
+  // 1. Build the workbook: headers + data only, styled.
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "EDF SABER";
   workbook.created = new Date();
+  workbook.title = doc.title;
 
   for (const grid of model.sheets) {
-    const worksheet = workbook.addWorksheet(grid.sheet.name.slice(0, 31));
-    if (grid.sheet.sheetKind === "instructions") {
-      worksheet.addRow(["Instructions"]);
-      worksheet.addRow([grid.sheet.description || ""]);
+    if (grid.sheet.sheetKind === "instructions" || grid.sheet.sheetKind === "glossary") {
+      // Skip in the workbook — full content goes into the markdown side car.
       continue;
     }
+    const worksheet = workbook.addWorksheet(safeSheetName(grid.sheet.name));
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
 
-    if (grid.sheet.sheetKind === "standard") {
-      worksheet.addRow(["Sheet Description"]);
-      worksheet.addRow([grid.sheet.description || ""]);
-      worksheet.addRow([]);
-      worksheet.addRow(["Field Legend"]);
-      worksheet.addRow(["Field", "Type", "Description"]);
-      for (const field of grid.fields) {
-        worksheet.addRow([field.label, field.type, field.description]);
-      }
-      worksheet.addRow([]);
+    const headers = grid.fields.map((f) => f.label);
+    worksheet.addRow(headers);
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 22;
+    headerRow.eachCell((cell) => {
+      cell.fill = HEADER_FILL;
+      cell.font = HEADER_FONT;
+      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: false };
+      cell.border = BORDER_STYLE;
+    });
+
+    let rowIndex = 2;
+    for (const row of grid.rows) {
+      const cellMap = row.cells as Record<string, unknown>;
+      const values = grid.fields.map((field) => {
+        const raw = cellMap[field.id] ?? cellMap[field.slug] ?? "";
+        return valueToCell(raw);
+      });
+      const xlRow = worksheet.addRow(values);
+      const zebra = rowIndex % 2 === 0;
+      xlRow.eachCell({ includeEmpty: true }, (cell) => {
+        cell.alignment = { vertical: "top", wrapText: true };
+        cell.border = BORDER_STYLE;
+        if (zebra) cell.fill = ZEBRA_FILL;
+      });
+      rowIndex += 1;
     }
 
-    worksheet.addRow(grid.fields.map((field) => field.label));
-    for (const row of grid.rows) {
-      worksheet.addRow(grid.fields.map((field) => {
+    // Width: take the longest of (header, first 30 sampled cells per column),
+    // capped to 60 chars. Empty columns get a sensible minimum.
+    const sampleRows = grid.rows.slice(0, 30);
+    grid.fields.forEach((field, i) => {
+      const headerLen = field.label.length;
+      let maxLen = headerLen;
+      for (const row of sampleRows) {
         const cellMap = row.cells as Record<string, unknown>;
-        const value = cellMap[field.id] ?? cellMap[field.slug] ?? "";
-        if (Array.isArray(value)) return value.map((item) => item.label ?? String(item)).join(", ");
-        return value;
-      }));
+        const raw = cellMap[field.id] ?? cellMap[field.slug] ?? "";
+        const s = String(valueToCell(raw) ?? "");
+        // Wrap-aware: count the longest single line, not whole text.
+        const longest = s.split(/\r?\n/).reduce((max, line) => Math.max(max, line.length), 0);
+        if (longest > maxLen) maxLen = longest;
+      }
+      worksheet.getColumn(i + 1).width = Math.min(Math.max(maxLen + 2, 12), 60);
+    });
+
+    if (grid.rows.length > 0) {
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: headers.length }
+      };
     }
   }
 
-  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
-  const filename = `${model.document.title.replace(/[^a-z0-9_-]+/gi, "_")}.xlsx`;
-  const job = await markExportJob(model.document.id, user, "complete", { sheets: model.sheets.length }, { filename, base64: buffer.toString("base64") });
+  // 2. Build the markdown sidecar with document metadata + per-sheet schema.
+  const md = buildMarkdownMetadata(model);
+
+  // 3. ZIP both files.
+  const xlsxBuffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const titleSlug = doc.title.replace(/[^a-z0-9_-]+/gi, "_") || "document";
+  const zip = new JSZip();
+  zip.file(`${titleSlug}.xlsx`, xlsxBuffer);
+  zip.file(`${titleSlug}.md`, md);
+  const buffer = await zip.generateAsync({ type: "nodebuffer" });
+  const filename = `${titleSlug}.zip`;
+
+  const job = await markExportJob(
+    doc.id,
+    user,
+    "complete",
+    { sheets: model.sheets.length, bundle: ["xlsx", "md"] },
+    { filename, base64: buffer.toString("base64") }
+  );
   return { job, filename, buffer };
+}
+
+function buildMarkdownMetadata(model: Awaited<ReturnType<typeof getDocumentExportModel>>): string {
+  const doc = model.document;
+  const lines: string[] = [];
+  lines.push(`# ${doc.title}`);
+  lines.push("");
+  if (doc.description) {
+    lines.push(doc.description);
+    lines.push("");
+  }
+
+  lines.push("## Metadata");
+  lines.push("");
+  lines.push("| Field | Value |");
+  lines.push("| --- | --- |");
+  lines.push(`| Title | ${escapeMdTableCell(doc.title)} |`);
+  lines.push(`| Status | ${escapeMdTableCell(doc.status ?? "—")} |`);
+  lines.push(`| Classification | ${escapeMdTableCell(doc.classification ?? "—")} |`);
+  lines.push(`| Baseline | ${escapeMdTableCell(doc.baselineState ?? "—")} |`);
+  if (doc.templateType) {
+    lines.push(`| Template | ${escapeMdTableCell(doc.templateType)} |`);
+  }
+  lines.push(`| Version | ${doc.version ?? 1} |`);
+  lines.push(`| Exported at | ${new Date().toISOString()} |`);
+  lines.push("");
+
+  for (const grid of model.sheets) {
+    const kind = grid.sheet.sheetKind;
+    if (kind === "glossary") continue; // glossary is derived, no point exporting its schema
+    lines.push(`## ${grid.sheet.name}`);
+    lines.push("");
+    if (grid.sheet.description) {
+      lines.push(grid.sheet.description);
+      lines.push("");
+    }
+    if (kind === "instructions") {
+      // Treat instructions as free-form prose, not a fielded sheet.
+      for (const row of grid.rows) {
+        const cellMap = row.cells as Record<string, unknown>;
+        for (const f of grid.fields) {
+          const v = cellMap[f.id] ?? cellMap[f.slug] ?? "";
+          const s = String(valueToCell(v) ?? "");
+          if (s.trim()) lines.push(s);
+        }
+      }
+      lines.push("");
+      continue;
+    }
+    if (grid.fields.length === 0) {
+      lines.push("_No fields defined._");
+      lines.push("");
+      continue;
+    }
+    lines.push("| Field | Type | Required | Unique | Description |");
+    lines.push("| --- | --- | --- | --- | --- |");
+    for (const field of grid.fields) {
+      lines.push(
+        `| ${escapeMdTableCell(field.label)} | ${field.type} | ${field.required ? "yes" : ""} | ${field.unique ? "yes" : ""} | ${escapeMdTableCell(field.description ?? "")} |`
+      );
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
 }

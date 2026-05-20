@@ -7,9 +7,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     const user = await requireUser();
     const { id } = await context.params;
     const { filename, buffer } = await exportWorkbook(user, id);
-    return new Response(buffer, {
+    const body = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    return new Response(body as unknown as BodyInit, {
       headers: {
-        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-type": "application/zip",
         "content-disposition": `attachment; filename="${filename}"`
       }
     });
