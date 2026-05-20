@@ -70,6 +70,12 @@ const MOCK_DOCS = [
   }
 ];
 
+const MOCK_SOURCES = [
+  { id: "tut-src1", title: "CONOPS User Guide v1.1.pdf" },
+  { id: "tut-src2", title: "Comms ICD Annex.docx" },
+  { id: "tut-src3", title: "Verification plan.md" }
+];
+
 const MOCK_SHEETS = [
   { id: "s1", name: "Requirements" },
   { id: "s2", name: "Interfaces" },
@@ -178,11 +184,13 @@ const STEPS: Step[] = [
     placement: "bottom"
   },
   {
-    title: "Import from Excel",
+    title: "Import",
     body: (
       <>
-        Upload an .xlsx / .xlsm workbook. SaberX parses sheets, columns and rows on the server
-        and brings them in with the schema preserved.
+        One button, two roles. Drop an <strong>.xlsx / .xlsm</strong> workbook and EDF SABER
+        parses it into a document with sheets, columns and rows. Drop a{" "}
+        <strong>.pdf / .docx / .md / .txt</strong> file and it lands in your source library so
+        you can reference it from any cell.
       </>
     ),
     view: "documents",
@@ -194,8 +202,9 @@ const STEPS: Step[] = [
     title: "Sidebar",
     body: (
       <>
-        Your main navigation. <strong>Workspace</strong> lists your documents; <strong>Tools</strong>{" "}
-        gives you Search, Audit log, Integrity, Snapshots, Admin and Profile.
+        Your main navigation. <strong>Workspace</strong> lists your documents and your source
+        library; <strong>Tools</strong> gives you Search, Audit log, Integrity, Snapshots, Admin
+        and Profile. Each section can be expanded / collapsed with its chevron.
       </>
     ),
     view: "documents",
@@ -208,7 +217,8 @@ const STEPS: Step[] = [
       <>
         Every workbook (CONOPS, ICD, RTM…) lives under <strong>Documents</strong>. The{" "}
         <Icon name="plus" size={12} style={{ verticalAlign: "-1px" }} /> next to it creates one
-        inline.
+        inline. Expanded sections list their items right under the heading so you can jump
+        straight to any document.
       </>
     ),
     view: "documents",
@@ -219,12 +229,10 @@ const STEPS: Step[] = [
     title: "Sources",
     body: (
       <>
-        Upload PDF, DOCX, Markdown or plain-text files (up to 50 MB each) and reference them
-        from any cell. The <Icon name="plus" size={12} style={{ verticalAlign: "-1px" }} /> opens
-        the upload picker; the list view lets you preview, download or remove existing sources.
-        To use a source from a cell, configure a reference field with{" "}
-        <strong>Include sources</strong> in the schema tab — the picker then lists files
-        alongside row targets.
+        Your global library of PDF / DOCX / MD / TXT files (up to 50 MB each). Upload with the
+        top-bar <strong>Import</strong> button — the system routes the file here automatically
+        based on its extension. Cells can reference a source from any document once the field's
+        binding includes <strong>Allow source links</strong>.
       </>
     ),
     view: "documents",
@@ -274,13 +282,26 @@ const STEPS: Step[] = [
     title: "Rows & cells",
     body: (
       <>
-        Click <strong>+ Add row</strong> to create a record. Double-click any cell to edit it
-        inline; reference cells link to a row in another sheet.
+        Click <strong>+ Add row</strong> to create a record. Click any cell to edit it inline;
+        reference cells open a picker that can target rows in <em>any</em> document, plus
+        uploaded sources when the field is configured to allow them.
       </>
     ),
     view: "document",
     selector: "[data-tour='doc-add-row']",
     placement: "top"
+  },
+  {
+    title: "Detect references",
+    body: (
+      <>
+        Many imports start life with references typed as plain text — &quot;UC-01; UC-02&quot;,
+        &quot;UC-01 to UC-07&quot;, or &quot;All&quot;. The <strong>Detect refs</strong> button
+        in the document toolbar scans every text column, lists what it found, lets you confirm
+        ambiguous matches, and converts those columns to real reference fields in one shot.
+      </>
+    ),
+    view: "document"
   },
   // --- Audit ---
   {
@@ -473,7 +494,7 @@ function MockSidebar({ userName, userRole }: { userName: string; userRole: strin
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
-                padding: "5px 8px 5px 22px",
+                padding: "5px 8px 5px 32px",
                 borderRadius: 6,
                 color: "var(--ink-2)",
                 fontSize: 12.5
@@ -489,6 +510,34 @@ function MockSidebar({ userName, userRole }: { userName: string; userRole: strin
                 }}
               >
                 {d.title}
+              </span>
+            </div>
+          ))}
+        <SourcesRow collapsed={collapsed} />
+        {!collapsed &&
+          MOCK_SOURCES.map((s) => (
+            <div
+              key={s.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "5px 8px 5px 32px",
+                borderRadius: 6,
+                color: "var(--ink-2)",
+                fontSize: 12.5
+              }}
+            >
+              <Icon name="doc" size={12} style={{ color: "var(--ink-4)", flex: "none" }} />
+              <span
+                style={{
+                  flex: 1,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap"
+                }}
+              >
+                {s.title}
               </span>
             </div>
           ))}
@@ -571,6 +620,23 @@ function SectionLabel({ label, pad }: { label: string; pad?: boolean }) {
 function DocumentsRow({ collapsed }: { collapsed: boolean }) {
   return (
     <div data-tour="nav-documents" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      {!collapsed && (
+        <div
+          className="sx-btn sx-btn-ghost sx-btn-sm"
+          style={{
+            padding: 2,
+            width: 18,
+            height: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "default"
+          }}
+          aria-hidden
+        >
+          <Icon name="chevronD" size={12} />
+        </div>
+      )}
       <div
         style={{
           flex: 1,
@@ -586,7 +652,7 @@ function DocumentsRow({ collapsed }: { collapsed: boolean }) {
           justifyContent: collapsed ? "center" : "flex-start"
         }}
       >
-        <Icon name="docs" size={12} style={{ color: "var(--ink)", flex: "none" }} />
+        {collapsed && <Icon name="docs" size={12} style={{ color: "var(--ink)", flex: "none" }} />}
         {!collapsed && <span style={{ flex: 1 }}>Documents</span>}
       </div>
       {!collapsed && (
@@ -594,6 +660,47 @@ function DocumentsRow({ collapsed }: { collapsed: boolean }) {
           <Icon name="plus" size={12} />
         </div>
       )}
+    </div>
+  );
+}
+
+function SourcesRow({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div data-tour="nav-sources" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      {!collapsed && (
+        <div
+          className="sx-btn sx-btn-ghost sx-btn-sm"
+          style={{
+            padding: 2,
+            width: 18,
+            height: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "default"
+          }}
+          aria-hidden
+        >
+          <Icon name="chevronD" size={12} />
+        </div>
+      )}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: collapsed ? "7px 8px" : "6px 8px",
+          borderRadius: 6,
+          color: "var(--ink-2)",
+          fontSize: 12.5,
+          fontWeight: 400,
+          justifyContent: collapsed ? "center" : "flex-start"
+        }}
+      >
+        {collapsed && <Icon name="folder" size={12} style={{ color: "var(--ink-3)", flex: "none" }} />}
+        {!collapsed && <span style={{ flex: 1 }}>Sources</span>}
+      </div>
     </div>
   );
 }
