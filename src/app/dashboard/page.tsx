@@ -90,7 +90,6 @@ export default async function RepositoryPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: "var(--panel-2)" }}>
-                <Th>Code</Th>
                 <Th>Title</Th>
                 <Th>Type</Th>
                 <Th>Status</Th>
@@ -103,29 +102,15 @@ export default async function RepositoryPage() {
             <tbody>
               {docs.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}>
+                  <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "var(--ink-3)" }}>
                     No documents yet. Use <strong>Import</strong> or <strong>New document</strong> in the top bar to begin.
                   </td>
                 </tr>
               )}
               {docs.map((d) => {
-                const code = (d.templateType || "DOC").toUpperCase();
                 const type = (d.templateType || "").toUpperCase();
                 return (
                   <tr key={d.id} style={{ borderTop: "1px solid var(--line)" }}>
-                    <Td>
-                      <Link
-                        href={`/dashboard/documents/${d.id}`}
-                        className="mono"
-                        style={{
-                          color: "var(--accent-ink)",
-                          textDecoration: "none",
-                          fontSize: 12
-                        }}
-                      >
-                        {code}
-                      </Link>
-                    </Td>
                     <Td>
                       <Link
                         href={`/dashboard/documents/${d.id}`}
