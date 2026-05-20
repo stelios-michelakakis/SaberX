@@ -252,17 +252,36 @@ export function TraceGraph({
       }
       setLines(next);
     };
-    compute();
+    // Recompute on the next frame so the DOM has settled after the toggle —
+    // measuring synchronously can pick up stale heights from before the
+    // re-render flushes.
+    const raf = requestAnimationFrame(compute);
+
+    // Observe the container AND every individual row card so any height
+    // change (e.g. extra field rows being added/removed when the user
+    // toggles a field tag) triggers a recompute.
     const ro = new ResizeObserver(compute);
     if (containerRef.current) ro.observe(containerRef.current);
+    for (const el of leftRefs.current.values()) if (el) ro.observe(el);
+    for (const el of rightRefs.current.values()) if (el) ro.observe(el);
+
     window.addEventListener("resize", compute);
     window.addEventListener("scroll", compute, true);
     return () => {
+      cancelAnimationFrame(raf);
       ro.disconnect();
       window.removeEventListener("resize", compute);
       window.removeEventListener("scroll", compute, true);
     };
-  }, [visibleLinks, leftSheetId, rightSheetId]);
+  }, [
+    visibleLinks,
+    leftSheetId,
+    rightSheetId,
+    leftSelectedFields,
+    rightSelectedFields,
+    leftDetail,
+    rightDetail
+  ]);
 
   const linkedFromLeft = useMemo(() => {
     const m = new Map<string, Set<string>>();
