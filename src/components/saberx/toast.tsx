@@ -119,19 +119,7 @@ function ToastViewport({
 }) {
   if (toasts.length === 0) return null;
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: 18,
-        right: 18,
-        zIndex: 1000,
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        pointerEvents: "none",
-        maxWidth: "calc(100vw - 36px)"
-      }}
-    >
+    <div className="sx-toast-stack" role="region" aria-live="polite" aria-label="Notifications">
       {toasts.map((t) => (
         <ToastCard key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
       ))}
@@ -139,15 +127,13 @@ function ToastViewport({
   );
 }
 
-function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
-  const tone = toast.tone;
-  const accentMap: Record<ToastTone, { color: string; icon: string }> = {
-    success: { color: "var(--green)", icon: "check" },
-    error: { color: "var(--red)", icon: "alert" },
-    info: { color: "var(--sx-accent)", icon: "info" }
-  };
-  const a = accentMap[tone];
+const ICON_BY_TONE: Record<ToastTone, string> = {
+  success: "check",
+  error: "alert",
+  info: "info"
+};
 
+function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   const onAction = async () => {
     if (!toast.action) return;
     try {
@@ -157,43 +143,27 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
     }
   };
 
+  const showProgress =
+    !toast.loading && typeof toast.durationMs === "number" && toast.durationMs > 0;
+
   return (
-    <div
-      style={{
-        pointerEvents: "auto",
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        minWidth: 280,
-        maxWidth: 420,
-        padding: "10px 12px",
-        background: "var(--panel)",
-        border: "1px solid var(--line)",
-        borderLeft: `3px solid ${a.color}`,
-        borderRadius: "var(--sx-radius)",
-        boxShadow: "var(--sx-shadow-lg)",
-        fontSize: 12.5,
-        color: "var(--ink)"
-      }}
-    >
-      <Icon
-        name={toast.loading ? "spinner" : a.icon}
-        size={14}
-        className={toast.loading ? "spin" : undefined}
-        style={{ color: a.color, marginTop: 2 }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 500, color: "var(--ink)" }}>{toast.message}</div>
-        {toast.detail && (
-          <div style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 12 }}>{toast.detail}</div>
-        )}
+    <div className="sx-toast" data-tone={toast.tone} role="status">
+      <span className="sx-toast-icon" aria-hidden>
+        <Icon
+          name={toast.loading ? "spinner" : ICON_BY_TONE[toast.tone]}
+          size={14}
+          className={toast.loading ? "spin" : undefined}
+        />
+      </span>
+      <div className="sx-toast-body">
+        <div className="sx-toast-title">{toast.message}</div>
+        {toast.detail && <div className="sx-toast-detail">{toast.detail}</div>}
       </div>
       {toast.action && (
         <button
           type="button"
-          className="sx-btn sx-btn-sm"
+          className="sx-btn sx-btn-sm sx-toast-action"
           onClick={onAction}
-          style={{ alignSelf: "center" }}
         >
           {toast.action.label}
         </button>
@@ -202,18 +172,20 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss"
-        style={{
-          background: "transparent",
-          border: 0,
-          color: "var(--ink-4)",
-          cursor: "pointer",
-          padding: 4,
-          marginLeft: 2,
-          alignSelf: "flex-start"
-        }}
+        className="sx-toast-close"
       >
         <Icon name="x" size={12} />
       </button>
+      {showProgress && (
+        <span
+          className="sx-toast-progress"
+          style={{
+            width: "100%",
+            animationDuration: `${toast.durationMs}ms`
+          }}
+          aria-hidden
+        />
+      )}
     </div>
   );
 }
