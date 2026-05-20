@@ -68,12 +68,16 @@ export function TraceGraph({
   links,
   rowMap,
   sheetMap,
-  documentFilterId
+  documentFilterId,
+  hideSourceDocInTitle = false,
+  hideTargetDocInTitle = false
 }: {
   links: TraceLink[];
   rowMap: Map<string, TraceRow>;
   sheetMap: Map<string, TraceSheet>;
   documentFilterId: string | null;
+  hideSourceDocInTitle?: boolean;
+  hideTargetDocInTitle?: boolean;
 }) {
   const eligibleSourceSheets = useMemo(() => {
     const ids = new Set<string>();
@@ -403,7 +407,13 @@ export function TraceGraph({
         }}
       >
         <Column
-          title={leftSheet ? `${leftSheet.documentTitle} · ${leftSheet.name}` : "Source"}
+          title={
+            leftSheet
+              ? hideSourceDocInTitle
+                ? leftSheet.name
+                : `${leftSheet.documentTitle} · ${leftSheet.name}`
+              : "Source"
+          }
           rows={leftRows}
           side="left"
           detail={leftDetail}
@@ -414,7 +424,13 @@ export function TraceGraph({
         />
         <div />
         <Column
-          title={rightSheet ? `${rightSheet.documentTitle} · ${rightSheet.name}` : "Target"}
+          title={
+            rightSheet
+              ? hideTargetDocInTitle
+                ? rightSheet.name
+                : `${rightSheet.documentTitle} · ${rightSheet.name}`
+              : "Target"
+          }
           rows={rightRows}
           side="right"
           detail={rightDetail}
@@ -630,9 +646,10 @@ function Column({
                         color: "var(--ink-2)",
                         lineHeight: 1.35,
                         display: "flex",
-                        flexDirection: side === "left" ? "row" : "row-reverse",
+                        flexDirection: "row",
                         alignItems: "baseline",
-                        gap: 6
+                        gap: 6,
+                        justifyContent: side === "left" ? "flex-start" : "flex-end"
                       }}
                     >
                       <span style={{ color: "var(--ink-4)", flex: "none", fontSize: 10.5 }}>
@@ -643,7 +660,9 @@ function Column({
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
-                          flex: 1
+                          textAlign: side === "left" ? "left" : "right",
+                          flex: side === "left" ? 1 : "0 1 auto",
+                          minWidth: 0
                         }}
                         title={value}
                       >

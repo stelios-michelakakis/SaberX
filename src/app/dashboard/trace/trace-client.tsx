@@ -195,6 +195,8 @@ export function TraceClient({
           rowMap={rowMap}
           sheetMap={sheetMap}
           documentFilterId={sourceDocId || targetDocId || null}
+          hideSourceDocInTitle={Boolean(sourceDocId)}
+          hideTargetDocInTitle={Boolean(targetDocId)}
         />
       )}
       </div>
