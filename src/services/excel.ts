@@ -125,13 +125,28 @@ export async function importWorkbook(user: ActorUser, filename: string, bytes: B
 
     for (const column of resolvedColumns) {
       const samples = dataRows.map((row) => row[column.columnIndex]);
+      const inferred = inferFieldType(samples);
+      // When the heuristic picks single_enum we MUST seed it with the
+      // distinct sample values — otherwise normalizeFieldValue throws
+      // "<field> has no options defined" on the first cell write.
+      const options =
+        inferred === "single_enum"
+          ? Array.from(
+              new Set(
+                samples
+                  .map((s) => (s == null ? "" : String(s).trim()))
+                  .filter(Boolean)
+              )
+            )
+          : [];
       await createField(user, sheet.id, {
         label: column.label,
-        type: inferFieldType(samples),
+        type: inferred,
         description: `Imported field ${column.label}`,
         required: false,
         unique: false,
-        editable: true
+        editable: true,
+        options
       });
     }
 
