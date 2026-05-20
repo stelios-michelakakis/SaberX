@@ -314,44 +314,14 @@ export default async function TracePage({
   const docCount = docs.length;
 
   return (
-    <>
-      <div
-        style={{
-          padding: "10px 28px",
-          borderBottom: "1px solid var(--line)",
-          background: "var(--panel)",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 16,
-          fontSize: 12,
-          color: "var(--ink-3)"
-        }}
-      >
-        <span>
-          <strong style={{ color: "var(--ink)" }}>{totalLinks}</strong>{" "}
-          {totalLinks === 1 ? "link" : "links"}
-        </span>
-        <span>
-          <strong style={{ color: "var(--ink)" }}>{totalSources}</strong>{" "}
-          {totalSources === 1 ? "source row" : "source rows"}
-        </span>
-        <span>
-          <strong style={{ color: "var(--ink)" }}>{docCount}</strong>{" "}
-          {docCount === 1 ? "document involved" : "documents involved"}
-        </span>
-        <span>
-          <strong style={{ color: "var(--ink)" }}>{Number(orphans)}</strong>{" "}
-          {Number(orphans) === 1 ? "row without outgoing links" : "rows without outgoing links"}
-        </span>
-      </div>
-      <TraceClient
-        links={traceLinks}
-        rows={traceRows}
-        sheets={traceSheets}
-        fields={fieldRows.map((f) => ({ id: f.id, label: f.label }))}
-        documents={docs}
-        initialDocumentId={docFilter ?? ""}
-      />
-    </>
+    <TraceClient
+      links={traceLinks}
+      rows={traceRows}
+      sheets={traceSheets}
+      fields={fieldRows.map((f) => ({ id: f.id, label: f.label }))}
+      documents={docs}
+      initialDocumentId={docFilter ?? ""}
+      stats={{ totalLinks, totalSources, docCount, orphans: Number(orphans) }}
+    />
   );
 }

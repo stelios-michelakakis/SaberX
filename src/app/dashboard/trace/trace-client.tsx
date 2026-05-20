@@ -40,7 +40,8 @@ export function TraceClient({
   sheets,
   fields,
   documents,
-  initialDocumentId
+  initialDocumentId,
+  stats
 }: {
   links: TraceLink[];
   rows: TraceRow[];
@@ -48,6 +49,7 @@ export function TraceClient({
   fields: { id: string; label: string }[];
   documents: { id: string; title: string }[];
   initialDocumentId: string;
+  stats: { totalLinks: number; totalSources: number; docCount: number; orphans: number };
 }) {
   const [mode, setMode] = useState<Mode>("graph");
   const [sourceDocId, setSourceDocId] = useState(initialDocumentId);
@@ -69,22 +71,39 @@ export function TraceClient({
   }, [links, sourceDocId, targetDocId, rowMap]);
 
   return (
-    <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
+    <>
       <div
         style={{
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-          padding: "10px 14px",
+          padding: "10px 28px",
+          borderBottom: "1px solid var(--line)",
           background: "var(--panel)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--sx-radius-lg)",
-          boxShadow: "var(--sx-shadow-sm)",
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          fontSize: 12,
+          color: "var(--ink-3)",
           flexWrap: "wrap"
         }}
       >
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{stats.totalLinks}</strong>{" "}
+          {stats.totalLinks === 1 ? "link" : "links"}
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{stats.totalSources}</strong>{" "}
+          {stats.totalSources === 1 ? "source row" : "source rows"}
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{stats.docCount}</strong>{" "}
+          {stats.docCount === 1 ? "document involved" : "documents involved"}
+        </span>
+        <span>
+          <strong style={{ color: "var(--ink)" }}>{stats.orphans}</strong>{" "}
+          {stats.orphans === 1 ? "row without outgoing links" : "rows without outgoing links"}
+        </span>
         <div
           style={{
+            marginLeft: "auto",
             display: "inline-flex",
             background: "var(--bg-2)",
             padding: 2,
@@ -117,7 +136,22 @@ export function TraceClient({
             </button>
           ))}
         </div>
-        <Icon name="filter" size={12} style={{ color: "var(--ink-3)", marginLeft: 6 }} />
+      </div>
+      <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          alignItems: "center",
+          padding: "10px 14px",
+          background: "var(--panel)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--sx-radius-lg)",
+          boxShadow: "var(--sx-shadow-sm)",
+          flexWrap: "wrap"
+        }}
+      >
+        <Icon name="filter" size={12} style={{ color: "var(--ink-3)" }} />
         <DocFilter
           label="Document source"
           value={sourceDocId}
@@ -163,7 +197,8 @@ export function TraceClient({
           documentFilterId={sourceDocId || targetDocId || null}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
