@@ -230,7 +230,11 @@ export function ChatDock({ documentId }: { documentId: string }) {
         style={{
           all: "unset",
           cursor: "pointer",
-          padding: "8px 14px",
+          // Matches the sidebar's bottom user-row height (10px padding +
+          // 26px avatar + 10px padding = 46px) so the two footers line up.
+          height: 46,
+          boxSizing: "border-box",
+          padding: "0 14px",
           display: "flex",
           alignItems: "center",
           gap: 8,
